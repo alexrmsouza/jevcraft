@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 const { setAside, isSetAside } = require('./progress');
 // Obsidian without a lucky find. Natural obsidian is rare in the Overworld,
 // but a bucket of water emptied on the shore of a lava pool turns every lava
@@ -335,7 +336,13 @@ function holdLava(bot, goal, save, { way, lava, dest = lava, why = '' }) {
     : way === 'to_lava' ? `Walking to the lava at ${at}, ${across} blocks off${height}, ${takes}${why}.`
     : `Digging toward the lava at ${at}, ${across} blocks off${height}, ${takes}${why}.`;
   held.says = line;
-  bot.chat?.(line);
+  const heightPt = dy <= -4 ? `, ${-dy} blocos abaixo` : dy >= 4 ? `, ${dy} blocos acima` : '';
+  const takesPt = takes.replace(/^about /, 'cerca de ').replace(/ seconds$/, ' segundos').replace(/ minutes$/, ' minutos');
+  const linePt = way === 'deep' ? `Vou cavar uma escada até a lava profunda em y ${Math.round(lava.y)}${heightPt}, ${takesPt}.`
+    : way === 'pool' ? `Vou caminhar até o lago de lava em ${at}, a ${across} blocos${heightPt}, ${takesPt}.`
+    : way === 'to_lava' ? `Vou caminhar até a lava em ${at}, a ${across} blocos${heightPt}, ${takesPt}.`
+    : `Vou cavar em direção à lava em ${at}, a ${across} blocos${heightPt}, ${takesPt}.`;
+  notify(bot, line, linePt);
   return held;
 }
 // A scooping spot's route search, remembered for a minute from where it
@@ -441,7 +448,8 @@ async function walkKnownStairs(bot, task, goal, save, lava, navigate) {
     const route = typeof surveyRoute === 'function' && movements ? await surveyRoute(bot, task, movements, new goals.GoalNear(s.x, s.y, s.z, 1), 2000) : { status: 'success' };
     if (route.status !== 'success') { s.failedAt = Date.now(); save(); return false; }
     goal.step = { ...goal.step, phase: 'known_stairs', to: { x: s.x, y: s.y, z: s.z } }; save();
-    bot.chat?.(`Back down the stairs dug before to the lava at (${s.lava.x}, ${s.lava.y}, ${s.lava.z}).`);
+    notify(bot, `Back down the stairs dug before to the lava at (${s.lava.x}, ${s.lava.y}, ${s.lava.z}).`,
+      `Vou descer pela escada que cavei antes até a lava em (${s.lava.x}, ${s.lava.y}, ${s.lava.z}).`);
     await navigate(bot, task, new goals.GoalNear(s.x, s.y, s.z, 1), { timeoutMs: 180000, stallMs: 12000 });
     return true;
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; s.failedAt = Date.now(); save(); return false; }

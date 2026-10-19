@@ -1,4 +1,5 @@
 'use strict';
+const { localize } = require('./language');
 
 // A dream for when nobody has asked for anything: the thing the bot
 // works toward on its own. Code enumerates what could come next from what
@@ -14,7 +15,8 @@ const DREAMS = {
 };
 
 // What a dream is called in chat: the player's own words for a custom one.
-const dreamTitle = standing => standing?.dream === 'custom' ? standing.text : DREAMS[standing?.dream]?.title;
+const dreamTitle = (standing, language) => standing?.dream === 'custom' ? standing.text
+  : localize(language, DREAMS[standing?.dream]?.title, { beat_the_game: 'vencer o jogo', build_a_village: 'construir uma vila' }[standing?.dream]);
 
 // The village vocabulary: the parts a village wants and how many of each.
 // A part is on offer only when the schematic shelf holds a design for it,
@@ -184,21 +186,22 @@ function customVerdict(standing, lastGoal) {
 
 // What the dream is and how it is going, in words, for "what is your dream".
 // `lastGoal` is the saved request; only one this dream launched counts.
-function dreamReport(standing, lastGoal) {
-  if (!standing?.dream) return "I don't have a dream yet. You could give me one: to beat the game, to build a village, or anything you could ask me to do, like build a castle by the lake.";
-  const title = dreamTitle(standing);
-  if (standing.dream !== 'custom') return standing.satisfiedAt ? `My dream was to ${title}, and I think it's done for now. Tell me to chase it again if you want more.`
-    : standing.paused ? `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`
-    : `My dream is to ${title}. I chase it whenever nothing else needs me.`;
-  if (standing.satisfiedAt) return `My dream was to ${title}, and it is done. Tell me to chase it again, or give me a new dream, if you want more.`;
+function dreamReport(standing, lastGoal, language) {
+  const say = (english, portuguese) => localize(language, english, portuguese);
+  if (!standing?.dream) return say("I don't have a dream yet. You could give me one: to beat the game, to build a village, or anything you could ask me to do, like build a castle by the lake.", 'Ainda não tenho um sonho. Você pode me dar um: vencer o jogo, construir uma vila ou realizar outro pedido, como construir um castelo perto do lago.');
+  const title = dreamTitle(standing, language);
+  if (standing.dream !== 'custom') return standing.satisfiedAt ? say(`My dream was to ${title}, and I think it's done for now. Tell me to chase it again if you want more.`, `Meu sonho era ${title} e acho que está concluído por enquanto. Peça para eu continuar se quiser mais.`)
+    : standing.paused ? say(`My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`, `Meu sonho é ${title}, mas estou deixando de lado até você pedir para eu continuar.`)
+    : say(`My dream is to ${title}. I chase it whenever nothing else needs me.`, `Meu sonho é ${title}. Vou segui-lo quando estiver livre.`);
+  if (standing.satisfiedAt) return say(`My dream was to ${title}, and it is done. Tell me to chase it again, or give me a new dream, if you want more.`, `Meu sonho era ${title} e está concluído. Peça para eu continuar ou me dê um novo sonho se quiser mais.`);
   if (standing.paused) return (standing.failures || 0) >= CUSTOM_ATTEMPTS
-    ? `My dream is to ${title}, but I set it aside after ${standing.failures} tries that did not work. Say "chase your dream" to try again.`
-    : `My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`;
+    ? say(`My dream is to ${title}, but I set it aside after ${standing.failures} tries that did not work. Say "chase your dream" to try again.`, `Meu sonho é ${title}, mas deixei de lado após ${standing.failures} tentativas sem sucesso. Diga "chase your dream" para tentar novamente.`)
+    : say(`My dream is to ${title}, but I'm keeping it aside until you tell me to chase it.`, `Meu sonho é ${title}, mas estou deixando de lado até você pedir para eu continuar.`);
   const mine = lastGoal?.dream === 'custom' && lastGoal.dreamSetAt === standing.setAt ? lastGoal : null;
-  const going = mine && ['pending', 'running', 'recovering'].includes(mine.status) ? " I'm working on it now."
-    : standing.failures ? ` It has not worked out yet: ${standing.failures} ${standing.failures === 1 ? 'try' : 'tries'} so far.`
-    : ' I will start when nothing else needs me.';
-  return `My dream is to ${title}. I do it once and then it is done.${going}`;
+  const going = mine && ['pending', 'running', 'recovering'].includes(mine.status) ? say(" I'm working on it now.", ' Estou trabalhando nisso agora.')
+    : standing.failures ? say(` It has not worked out yet: ${standing.failures} ${standing.failures === 1 ? 'try' : 'tries'} so far.`, ` Ainda não deu certo: ${standing.failures} ${standing.failures === 1 ? 'tentativa' : 'tentativas'} até agora.`)
+    : say(' I will start when nothing else needs me.', ' Vou começar quando estiver livre.');
+  return say(`My dream is to ${title}. I do it once and then it is done.${going}`, `Meu sonho é ${title}. Vou realizá-lo uma vez e concluir.${going}`);
 }
 
 // How the player gives, asks about, pauses, resumes or takes back the dream
@@ -206,6 +209,7 @@ function dreamReport(standing, lastGoal) {
 // chose for itself, so every one of these is the player's call.
 const { OPERATIONS, TEXT_FIT } = require('./decisions/dream');
 async function resolveDream(client, spec, { username, context } = {}) {
+  const say = (english, portuguese) => localize(context?.language, english, portuguese);
   const response = await require('./decisions').ask(client, { state: { request: spec.request, speaker: spec.from,
     guidance: 'The dream is what Jev chases when nobody has asked for anything. Giving one does not interrupt a request that is active.' },
   questions: { operation: ['dream_operation'] } });
@@ -220,18 +224,18 @@ async function resolveDream(client, spec, { username, context } = {}) {
   const text = operation === 'set_custom' ? customText(spec.request) : null;
   if (Number.isFinite(confidence) && confidence < needed) {
     return { ...spec, kind: 'clarify', message: operation === 'clear'
-      ? 'Do you want me to give up my dream for good? Say "Jev forget your dream" to be sure, or "Jev pause your dream" to set it aside.'
-      : `Should my dream be to ${text || DREAMS[operation.slice(4)].title}? Say "Jev your dream is to ${text || DREAMS[operation.slice(4)].title}" to be sure.`,
+      ? say('Do you want me to give up my dream for good? Say "Jev forget your dream" to be sure, or "Jev pause your dream" to set it aside.', 'Você quer que eu abandone meu sonho de vez? Diga "Jev forget your dream" para confirmar ou "Jev pause your dream" para deixá-lo de lado.')
+      : say(`Should my dream be to ${text || DREAMS[operation.slice(4)].title}? Say "Jev your dream is to ${text || DREAMS[operation.slice(4)].title}" to be sure.`, `Meu sonho deve ser ${text || dreamTitle({ dream: operation.slice(4) }, context?.language)}? Diga "Jev your dream is to ${text || DREAMS[operation.slice(4)].title}" para confirmar.`),
     clarification: { reason: 'dream_unsure', operation, confidence, threshold: needed } };
   }
-  if (operation === 'none') return { ...spec, kind: 'clarify', message: 'You can give me a dream ("Jev your dream is to build a village", "your dream is to beat the game", or any one request, like "your dream is to build a castle by the lake"), ask what it is, tell me to chase it or set it aside, or tell me to forget it.', clarification: { reason: 'dream_unclear' } };
+  if (operation === 'none') return { ...spec, kind: 'clarify', message: say('You can give me a dream ("Jev your dream is to build a village", "your dream is to beat the game", or any one request, like "your dream is to build a castle by the lake"), ask what it is, tell me to chase it or set it aside, or tell me to forget it.', 'Você pode me dar um sonho, como "Jev your dream is to build a village", perguntar qual é, pedir para eu continuar, deixá-lo de lado ou esquecê-lo.'), clarification: { reason: 'dream_unclear' } };
   if (operation === 'set_custom') {
-    const suggestion = 'Give me a dream I could do as a request, like "your dream is to build a castle by the lake" or "your dream is to get me a stack of diamonds", or say it as a request and I will do it now.';
-    if (!text) return { ...spec, kind: 'clarify', message: `What should my dream be? Say it like "Jev your dream is to build a castle by the lake".`, clarification: { reason: 'dream_no_text' } };
-    if (text.length > CUSTOM_TEXT_MAX) return { ...spec, kind: 'clarify', message: `That is too long for one dream. ${suggestion}`, clarification: { reason: 'dream_not_a_request' } };
+    const suggestion = say('Give me a dream I could do as a request, like "your dream is to build a castle by the lake" or "your dream is to get me a stack of diamonds", or say it as a request and I will do it now.', 'Dê um sonho que eu consiga realizar como tarefa, como "your dream is to build a castle by the lake", ou faça o pedido diretamente para eu começar agora.');
+    if (!text) return { ...spec, kind: 'clarify', message: say(`What should my dream be? Say it like "Jev your dream is to build a castle by the lake".`, 'Qual deve ser meu sonho? Diga algo como "Jev your dream is to build a castle by the lake".'), clarification: { reason: 'dream_no_text' } };
+    if (text.length > CUSTOM_TEXT_MAX) return { ...spec, kind: 'clarify', message: say(`That is too long for one dream. ${suggestion}`, `Isso é longo demais para um sonho. ${suggestion}`), clarification: { reason: 'dream_not_a_request' } };
     const checked = await checkCustomText(client, text, { from: spec.from, username, context });
     if (!checked.ok) return { ...spec, kind: 'clarify', message: checked.probe?.kind === 'clarify' && checked.probe.message
-      ? `I could not take "${text}" as a dream yet: ${checked.probe.message} ${suggestion}` : `I do not know how to do "${text}" as a request, so I will not keep it as a dream. ${suggestion}`,
+      ? say(`I could not take "${text}" as a dream yet: ${checked.probe.message} ${suggestion}`, `Ainda não consigo guardar "${text}" como sonho: ${checked.probe.message} ${suggestion}`) : say(`I do not know how to do "${text}" as a request, so I will not keep it as a dream. ${suggestion}`, `Não sei realizar "${text}" como tarefa, então não vou guardar isso como sonho. ${suggestion}`),
     clarification: { reason: 'dream_not_a_request', text, routed: checked.probe?.kind, fit: checked.fit } };
     return { ...spec, kind: 'dream', dream: { operation, key: 'custom', text, probe: checked.probe, judgment: response.answers.operation }, usage: response.usage };
   }

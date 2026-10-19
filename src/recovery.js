@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { checkThreats, threats } = require('./danger');
@@ -69,7 +70,19 @@ async function recoverItems(bot, task, recovery, save, navigate) {
     recovery.status = 'finished'; recovery.reason = reason;
     recovery.inventoryAfter = stock(bot); recovery.finishedAt = new Date().toISOString();
     save(); bot.emit?.('death_recovery', recovery);
-    bot.chat?.(`After respawning: ${reason}. Continuing from my current inventory.`);
+    const portugueseReason = {
+      'Creative inventory remains available': 'o inventário Criativo continua disponível',
+      'no items were recorded in my inventory at death': 'não havia itens registrados no meu inventário quando morri',
+      'the death location is in another dimension': 'o local da morte fica em outra dimensão',
+      'the drop retrieval window elapsed; the old items may have despawned': 'o prazo de recuperação terminou; os itens podem ter desaparecido',
+      'my health or hunger is too low for a retrieval trip': 'minha vida ou alimentação está baixa demais para buscar os itens',
+      'the bounded retrieval attempt ended': 'o limite desta tentativa de recuperação foi atingido',
+      'the death location is outside the currently observed area': 'o local da morte fica fora da área observada',
+      'recovered the recorded item quantities': 'recuperei as quantidades de itens registradas',
+      'no matching dropped items are visible at the death location': 'não vejo os itens perdidos no local da morte',
+      'I cannot safely reach the items that are left': 'não consigo chegar com segurança até os itens restantes',
+    }[reason] || 'não consegui chegar com segurança até os itens perdidos';
+    notify(bot, `After respawning: ${reason}. Continuing from my current inventory.`, `Após renascer: ${portugueseReason}. Vou continuar com meu inventário atual.`, 'important');
     return false;
   };
   if (bot.game.gameMode === 'creative') return finish('Creative inventory remains available');

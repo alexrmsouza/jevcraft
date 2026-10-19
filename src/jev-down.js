@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // Jev down: no decision is made by code (the user, 2026-09-30: "I don't
 // want jev fallbacks. If jev is down, decisions aren't made.").
 //
@@ -103,7 +104,7 @@ function down(bot, goal, id, err, { aside = false, log = console.log } = {}) {
   if (!h._jevDown) {
     h._jevDown = { since: Date.now(), lastAt: Date.now(), reason, kind, ...(status ? { status } : {}), lastKind: kind, fails: 1, questions: [id], asks: 0 };
     log(`[jev down] ${id}: ${reason}; no decision is made until Jev answers: holding, asking again`);
-    try { bot?.chat?.("Jev isn't answering, so I'm waiting here until it does."); } catch (_) { /* no chat */ }
+    try { notify(bot, "Jev isn't answering, so I'm waiting here until it does.", 'Jev não está respondendo; vou aguardar aqui até ele voltar.', 'important'); } catch (_) { /* no chat */ }
     if (goal) goal.jevOutage = { since: new Date(h._jevDown.since).toISOString(), reason, kind };
     emit(bot, 'jev_down', { since: new Date(h._jevDown.since).toISOString(), kind, ...(status ? { status } : {}), reason, question: id });
   } else if (!h._jevDown.questions.includes(id)) {
@@ -122,7 +123,7 @@ function back(bot, goal, id, { log = console.log } = {}) {
   delete h._jevDown;
   const seconds = Math.round((Date.now() - was.since) / 1000);
   log(`[jev down] back: ${id} answered after ${seconds}s down (${was.questions.join(', ')} held); what was held is asked fresh`);
-  try { bot?.chat?.('Jev is back.'); } catch (_) { /* no chat */ }
+  try { notify(bot, 'Jev is back.', 'Jev voltou a responder.', 'important'); } catch (_) { /* no chat */ }
   emit(bot, 'jev_back', { since: new Date(was.since).toISOString(), seconds, kind: was.kind, ...(was.status ? { status: was.status } : {}), fails: was.fails, questions: was.questions, answered: id });
   return { ...was, seconds };
 }

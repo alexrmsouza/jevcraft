@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, SHOOTERS, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
@@ -141,7 +143,7 @@ async function goldForPiglins(bot, task, goal, save, actions = {}, { crossing = 
     const mined = !craftsOnly && !smelted && !!steps?.length && steps.every(st => st.action === 'craft' || (st.action === 'mine' && st.block === 'nether_gold_ore')) && (bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) && oreNear();
     if (mined) {
       goal.step = { action: 'gold_for_piglins', item: 'golden_boots', mines: 'nether_gold_ore' }; save?.();
-      bot.chat?.('No gold on me and gold ore in sight: golden boots first, so the piglins leave me be.');
+      notify(bot, 'No gold on me and gold ore in sight: golden boots first, so the piglins leave me be.', 'Estou sem equipamento de ouro, mas encontrei minério. Vou fazer botas de ouro para não provocar os piglins.');
       const until = Date.now() + 120000;
       try { for (let n = 0; n < 16 && Date.now() < until && !countOf(bot, 'golden_boots'); n++) { task?.check?.(); await actions.acquireStep(bot, task, 'golden_boots', 1, goal, save); } }
       catch (err) {
@@ -156,7 +158,7 @@ async function goldForPiglins(bot, task, goal, save, actions = {}, { crossing = 
     if (!craftsOnly && !smelted) return false;
     if (!craftsOnly) {
       goal.step = { action: 'gold_for_piglins', item: 'golden_boots', smelts: true }; save?.();
-      bot.chat?.('Gold in my pack and none on me: golden boots first, so the piglins leave me be.');
+      notify(bot, 'Gold in my pack and none on me: golden boots first, so the piglins leave me be.', 'Tenho ouro na mochila. Vou fazer botas de ouro para não provocar os piglins.');
       try {
         for (let n = 0; n < 8 && countOf(bot, 'gold_ingot') < 4; n++) { task?.check?.(); await actions.acquireStep(bot, task, 'gold_ingot', 4, goal, save); }
         for (let n = 0; n < 3 && countOf(bot, 'gold_ingot') >= 4 && !countOf(bot, 'golden_boots'); n++) { task?.check?.(); await actions.acquireStep(bot, task, 'golden_boots', 1, goal, save); }
@@ -170,7 +172,7 @@ async function goldForPiglins(bot, task, goal, save, actions = {}, { crossing = 
       return true;
     }
     goal.step = { action: 'gold_for_piglins', item: 'golden_boots', crafts: steps.length }; save?.();
-    bot.chat?.('Gold in my pack and none on me: golden boots first, so the piglins leave me be.');
+    notify(bot, 'Gold in my pack and none on me: golden boots first, so the piglins leave me be.', 'Tenho ouro na mochila. Vou fazer botas de ouro para não provocar os piglins.');
     try { for (let n = 0; n < steps.length + 1 && !countOf(bot, 'golden_boots'); n++) { task?.check?.(); await actions.acquireStep(bot, task, 'golden_boots', 1, goal, save); } }
     catch (err) {
       task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
@@ -202,7 +204,7 @@ async function swordFromPack(bot, task, goal, save, actions = {}) {
     catch (_) { steps = null; }
     if (!steps?.length || steps.some(st => st.action !== 'craft')) continue;
     goal.step = { action: 'sword_from_pack', item, crafts: steps.length }; save?.();
-    bot.chat?.(`No sword on me and the makings of one in my pack: ${words(item)} first.`);
+    notify(bot, `No sword on me and the makings of one in my pack: ${words(item)} first.`, `Estou sem espada, mas tenho os materiais. Vou fazer ${displayName(item, bot)} primeiro.`);
     try { for (let n = 0; n < steps.length + 1 && !countOf(bot, item); n++) { task?.check?.(); await actions.acquireStep(bot, task, item, 1, goal, save); } }
     catch (err) {
       task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
@@ -1286,7 +1288,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // 982): 25594, eight blazes in sight and no rod, answered defer, and
     // three seconds on the rung was "getting nowhere with the ender pearl",
     // the stall's ways all other pearl ways: it left for the Overworld.
-    if (state.entity === 'enderman') { try { if (require('./pearl-order').endHeld(goal, 'Jev left the endermen in reach')) bot.chat?.('Leaving the endermen. Back to the rods.'); } catch (_) { /* the order stands */ } }
+    if (state.entity === 'enderman') { try { if (require('./pearl-order').endHeld(goal, 'Jev left the endermen in reach')) notify(bot, 'Leaving the endermen. Back to the rods.', 'Vou deixar os endermen por enquanto e voltar à busca por varas de blaze.'); } catch (_) { /* the order stands */ } }
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
   } };
@@ -1931,7 +1933,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       }
       if (state.watchFails >= 3) {
         setAside(goal, 'hunt_target', key, 'watched three times without getting anywhere', 120000); unwatch(goal, 'hunt_target', key); delete state.stalking; state.watchFails = 0; save();
-        bot.chat?.(`Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`);
+        notify(bot, `Watching ${step.entity.replaceAll('_', ' ')}s and getting nowhere. Trying another angle.`, `A busca por ${displayName(step.entity, bot)} não está avançando. Vou tentar outro caminho.`, 'important');
       }
       return;
     }
@@ -5071,7 +5073,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       state.walkedAll = { at: Date.now(), walked: planned.walked };
       require('./rung-measure').watchKills(bot);
       state.walkedAllLog = [...(state.walkedAllLog || []).filter(e => Date.now() - e.at < WALKED_ALL_MS), { at: Date.now(), kills: bot._kills?.blaze || 0, rods: countOf(bot, 'blaze_rod') }].slice(-16);
-      if (!(state.patrolSaidAt > Date.now() - 120000)) { state.patrolSaidAt = Date.now(); bot.chat?.('Walked what I can reach of this fortress. Deciding where next.'); }
+      if (!(state.patrolSaidAt > Date.now() - 120000)) { state.patrolSaidAt = Date.now(); notify(bot, 'Walked what I can reach of this fortress. Deciding where next.', 'Já percorri a parte acessível desta fortaleza. Vou decidir para onde seguir.'); }
       // Along the fortress's own length, as the outage default: fortress
       // corridors run straight along x or z.
       const spanX = Math.max(...bricks.map(b => b.x)) - Math.min(...bricks.map(b => b.x));
@@ -5233,20 +5235,20 @@ async function findFortressStep(bot, task, goal, save, actions) {
       if (e && String(e.method).split('/').at(-1) === 'back_to_fortress') tried.markBlocked(e, `the walk back to the fortress found no way: ${why}`);
     } catch (_) { /* no ledger */ }
     delete state.target; delete state.rememberedTarget; state.legFails = 0; save();
-    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.(`No way back to the fortress at ${Math.round(state.backFailed.target.x)}, ${Math.round(state.backFailed.target.z)} from here${why.length <= 60 ? `: ${why}` : ''}. Choosing how.`); }
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); notify(bot, `No way back to the fortress at ${Math.round(state.backFailed.target.x)}, ${Math.round(state.backFailed.target.z)} from here${why.length <= 60 ? `: ${why}` : ''}. Choosing how.`, `Não encontrei caminho de volta à fortaleza em ${Math.round(state.backFailed.target.x)}, ${Math.round(state.backFailed.target.z)}. Vou procurar outra rota.`, 'important'); }
     return;
   }
   if (along < LEG_REST_WITHIN) {
     restLeg(state, state.lastLegError || state.lastCrossStop, here, Math.round(along));
     delete state.target; state.legFails = 0; save();
-    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.(noWaySays(state, 'Choosing another.')); }
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); notify(bot, noWaySays(state, 'Choosing another.'), 'Não consegui avançar por este caminho. Vou tentar outra direção.', 'important'); }
     return;
   }
   // Short of blocks, the ways to more are Jev's beside the legs (chooseLeg:
   // restock_blocks, return_for_blocks), asked when the sweep turns.
   if (state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
     turnSweep(state); save();
-    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.(noWaySays(state, 'Choosing another way.')); }
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); notify(bot, noWaySays(state, 'Choosing another way.'), 'Não consegui avançar nesta direção. Vou tentar outro caminho.', 'important'); }
   }
 }
 // The turn said with its reason: "No way on in this direction" was said on

@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { formatItems } = require('./language');
 const { setAside, isSetAside } = require('./progress');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
@@ -521,7 +523,10 @@ async function stockStash(bot, task, goal, save, home, actions, { valuables = fa
     }
     // Food put away is said, with what stays carried (note 690).
     const food = require('./food-keep').foodSays(bot, stored);
-    if (food) bot.chat?.(`Put ${food} in the chest; ${require('./food-keep').carriedPoints(bot)} food points stay in my pockets.`);
+    if (food) {
+      const foods = stored.filter(move => require('./food-keep').isFood(bot, move.item)).reduce((counts, move) => { counts[move.item] = (counts[move.item] || 0) + move.count; return counts; }, {});
+      notify(bot, `Put ${food} in the chest; ${require('./food-keep').carriedPoints(bot)} food points stay in my pockets.`, `Guardei ${formatItems(foods, bot)} no baú; fiquei com comida para ${require('./food-keep').carriedPoints(bot)} pontos de fome.`, 'important');
+    }
     home.stash.stockedAt = new Date().toISOString();
     home.stash.slots = containerSlots(window);
     if (freeContainerSlots(window) === 0) home.stash.fullAt = new Date().toISOString(); else delete home.stash.fullAt;
@@ -566,7 +571,7 @@ async function expandStash(bot, task, goal, save, home, actions) {
     return false;
   }
   home.stash.second = plain(cell); home.stash.expandedAt = new Date().toISOString(); delete home.stash.fullAt; save();
-  bot.chat?.('The stash chest was full, so I made it a double chest.');
+  notify(bot, 'The stash chest was full, so I made it a double chest.', 'O baú da base estava cheio, então transformei em um baú duplo.');
   return true;
 }
 
@@ -733,7 +738,7 @@ async function leaveSpareKit(bot, task, goal, save, actions, offer) {
   try { stored = await stockStash(bot, task, goal, save, offer.home, actions, { only: m => m.slot === 'pickaxe' || m.slot === 'sword', extra }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare kit] not put in the chest: ${String(err.message || err).slice(0, 160)}`); }
   if (!stored.length) { setAside(goal, 'stash', 'spare_kit', 'nothing went into the chest', RETRY_MS); save(); }
-  else bot.chat?.(`Left ${describeMoves(stored)} in the chest at home: a kit to come back to.`);
+  else notify(bot, `Left ${describeMoves(stored)} in the chest at home: a kit to come back to.`, `Deixei ${formatItems(stored.reduce((counts, move) => { counts[move.item] = (counts[move.item] || 0) + move.count; return counts; }, {}), bot)} no baú da base: equipamento para quando eu voltar.`, 'important');
   return stored;
 }
 

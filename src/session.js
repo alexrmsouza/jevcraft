@@ -30,6 +30,8 @@ const { nextDreamRequest, shouldLaunchDream, DREAMS, FAILED_LAUNCH_MS, dreamTitl
 const { immediateThreat } = require('./danger');
 const { createReactiveWait } = require('./reactive-wait');
 const { createChatPolicy } = require('./chat-policy');
+const { createCommunicationPolicy, announce } = require('./communication');
+const { localize, displayName } = require('./language');
 const { Ledger, withRun, appendSummary } = require('./ledger');
 
 // The planner's verdict on a request, before any work starts: an error
@@ -51,10 +53,20 @@ function unworkable(bot, spec) {
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), recorder, planner,
   runLedger = path.join(stateDirectory, 'run-ledger.md') } = {}) {
+  const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const communication = createCommunicationPolicy({ host: config.host, language: process.env.JEV_LANGUAGE, narration: process.env.JEV_NARRATION,
+    file: path.join(stateDirectory, `${identity}-communication.json`), admins: process.env.JEV_CHAT_ADMINS });
   let ended = false, spawned = false, resolveClosed;
   const connectedAt = Date.now();
   const closed = new Promise(resolve => { resolveClosed = resolve; });
   const bot = mineflayer.createBot({ ...config, respawn: false });
+  Object.defineProperties(bot, {
+    _jevLanguage: { configurable: true, get: () => communication.language },
+    _jevNarration: { configurable: true, get: () => communication.narration },
+  });
+  const text = (english, portuguese) => localize(bot, english, portuguese);
+  const localizedDreamTitle = standing => dreamTitle(standing, bot);
+  const reportDream = (standing, lastGoal) => dreamReport(standing, lastGoal, bot);
   function setWaitingForRequest(waiting) {
     bot._waitingForRequest = waiting;
     if (planner) bot._requestActivityEpoch = (bot._requestActivityEpoch || 0) + 1;
@@ -154,7 +166,6 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   bot.once('spawn', () => { try { require('./slow-calls').install(bot); } catch (_) { /* not watched */ } });
   // A new build is taken at a quiet moment (quiet-restart.js).
   if (!process.env.JEV_NO_QUIET_RESTART) bot.once('spawn', () => require('./quiet-restart').watchRestartRequest(bot, path.join(stateDirectory, 'restart-requested'), { startedAt: connectedAt, port: config.port }));
-  const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   const chatPolicy = planner ? createChatPolicy({ host: config.host,
     file: path.join(stateDirectory, `${identity}-chat-policy.json`),
     mode: process.env.JEV_CHAT_MODE, admins: process.env.JEV_CHAT_ADMINS }) : null;
@@ -305,7 +316,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (err.name !== 'Cancelled') {
         goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
         observation?.sample('error', { message: err.message }, goal);
-        console.error(err); bot.chat(`${friendlyProblem(err)} ${recoveryHint(err)}`);
+        console.error(err); announce(bot, `${friendlyProblem(err, { bot })} ${recoveryHint(err, bot)}`, 'important');
       }
     }).finally(() => {
       if (active === session) {
@@ -333,10 +344,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       const { ledgerRun, ...rest } = standing;
       saveDream({ ...rest, satisfiedAt: new Date().toISOString() });
       if (ledgerRun) ledger.close(ledgerRun, 'satisfied');
-      bot.chat(`I did my dream: ${standing.text}. Tell me to chase it again, or give me a new dream, if you want more.`);
+      announce(bot, text(`I did my dream: ${standing.text}. Tell me to chase it again, or give me a new dream, if you want more.`, `Concluí meu sonho: ${standing.text}. Peça para eu continuar ou me dê um novo sonho se quiser mais.`), 'important');
     } else {
       saveDream({ ...standing, paused: true, pausedBy: 'failures', pausedAt: new Date().toISOString() });
-      bot.chat(`I could not do my dream (${standing.text}) after ${standing.failures} tries, so I am setting it aside. Say "chase your dream" to try again.`);
+      announce(bot, text(`I could not do my dream (${standing.text}) after ${standing.failures} tries, so I am setting it aside. Say "chase your dream" to try again.`, `Não consegui realizar meu sonho (${standing.text}) após ${standing.failures} tentativas, então vou deixá-lo de lado. Diga "chase your dream" para tentar novamente.`), 'important');
     }
     return true;
   }
@@ -378,7 +389,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (!next || next.done) {
         standing.satisfiedAt = new Date().toISOString(); standing.lastScore = next?.villageScore; delete standing.ledgerRun; saveDream(standing);
         ledger.close(runId, 'satisfied');
-        bot.chat(`I think my dream to ${dreamTitle(standing)} is done for now. Tell me to chase it again if you want more.`);
+        announce(bot, text(`I think my dream to ${dreamTitle(standing)} is done for now. Tell me to chase it again if you want more.`, `Acho que meu sonho de ${localizedDreamTitle(standing)} está concluído por enquanto. Peça para eu continuar se quiser mais.`), 'important');
         return;
       }
       attemptsFor(survival).clear('dream_launch', standing.dream); saveDream(standing);
@@ -386,7 +397,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         requesterPosition: null, initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
       const firstRung = next.kind === 'win' ? require('./game-progress').nextGameStage(bot, goal).phase?.replaceAll('_', ' ') : null;
-      bot.chat(`Nothing needs me, so I'm chasing my dream to ${dreamTitle(standing)}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}${firstRung ? `. First: ${firstRung}.` : `: ${next.request}.`}`);
+      announce(bot, text(`Nothing needs me, so I'm chasing my dream to ${dreamTitle(standing)}${next.villageScore !== undefined && next.villageScore !== null ? ` (the village is ${Math.round(next.villageScore * 100 / 3)}% there)` : ''}${firstRung ? `. First: ${firstRung}.` : `: ${next.request}.`}`, `Estou livre, então vou seguir meu sonho de ${localizedDreamTitle(standing)}.`));
       launch(goal);
     } catch (err) {
       console.error('[dream]', err.message);
@@ -432,7 +443,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (err.name !== 'Cancelled') {
         survival.state.idleBlocked = err.message; saveSurvival();
         observation?.sample('error', { message: err.message }, goal);
-        console.error(err); bot.chat(friendlyProblem(err));
+        console.error(err); announce(bot, friendlyProblem(err, { bot }), 'important');
       }
     }).finally(() => { if (active === session) active = null; });
   }
@@ -448,16 +459,19 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (waiting && !waiting.dream) await stop('replaced');
     }
     if (revision !== generation || ended) return;
-    if (active) { bot.chat('Already working on the saved task.'); return; }
+    if (active) { bot.chat(text('Already working on the saved task.', 'Já estou trabalhando na tarefa salva.')); return; }
     const current = store.read(), saved = resumeSaved(current, options);
     if (!saved || saved.status === 'complete') {
       setWaitingForRequest(Boolean(planner));
       survival.state.paused = Boolean(planner); delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
-      bot.chat(planner ? 'Aguardando seu próximo pedido. Continuo atento a perigos.' : "I'm back! I'll look after myself while I wait for your next task."); return;
+      bot.chat(planner ? text('Waiting for your next request. I am still watching for danger.', 'Aguardando seu próximo pedido. Continuo atento a perigos.') : text("I'm back! I'll look after myself while I wait for your next task.", 'Voltei! Vou cuidar de mim enquanto aguardo sua próxima tarefa.')); return;
     }
     delete saved.waitingOn;
     if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
-    if (saved !== current) bot.chat(`Back to your earlier task: ${saved.request}.`);
+    if (saved !== current) {
+      const message = text(`Back to your earlier task: ${saved.request}.`, `Voltando à sua tarefa anterior: ${saved.request}.`);
+      if (options?.automatic) announce(bot, message, 'important'); else bot.chat(message);
+    }
     launch(saved);
   }
   // The flight recording: what the bot sees and decides, for the audits.
@@ -483,8 +497,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       waitCheckedAt = now;
       const saved = resumeSaved(store.read());
       if (waitingCleared(bot, saved)) {
-        bot.chat(`The ${String(saved.waitingOn.name).replaceAll('_', ' ')} is gone. Back to building!`);
-        resume().catch(err => console.error(err));
+        announce(bot, text(`The ${String(saved.waitingOn.name).replaceAll('_', ' ')} is gone. Back to building!`, `${displayName(saved.waitingOn.name, bot)} saiu do caminho. Voltando à construção!`), 'important');
+        resume(generation, { automatic: true }).catch(err => console.error(err));
         return;
       }
     }
@@ -497,11 +511,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (!player || player.username === bot.username || typeof data.plainMessage !== 'string') return;
     const from = player.username;
     let request = data.plainMessage;
-    const chatCommand = chatPolicy?.handleCommand(request, { from, username: bot.username, players: bot.players });
+    const communicationCommand = communication.handleCommand(request, { from, username: bot.username, players: bot.players });
+    if (communicationCommand?.handled) { if (communicationCommand.message) bot.chat(communicationCommand.message); return; }
+    const chatCommand = chatPolicy?.handleCommand(request, { from, username: bot.username, players: bot.players, language: bot._jevLanguage });
     if (chatCommand?.handled) { if (chatCommand.message) bot.chat(chatCommand.message); return; }
     let literal;
     try { literal = requestedCommand(request, bot.username); }
-    catch (err) { console.error(err); bot.chat('I could not use that command. Please check what you asked me to do.'); return; }
+    catch (err) { console.error(err); bot.chat(text('I could not use that command. Please check what you asked me to do.', 'Não consegui usar esse comando. Confira o que você pediu.')); return; }
     let address = parseAddress(request, bot.username);
     // Acknowledgements from other bots must never start new work. New goals
     // require an explicit name; short controls remain convenient when unprefixed.
@@ -541,10 +557,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (stopping) {
       invalidateRequests();
       stop().catch(console.error);
-      bot.chat(planner ? 'Parei a tarefa; continuo me defendendo. Diga "Jev retome" para continuar.' : 'Stopped. I saved our progress. Say "Jev resume" to keep going.');
+      bot.chat(planner ? text('I stopped the task; I will still defend myself. Say "Jev resume" to continue.', 'Parei a tarefa; continuo me defendendo. Diga "Jev resume" para continuar.') : text('Stopped. I saved our progress. Say "Jev resume" to keep going.', 'Parei e salvei nosso progresso. Diga "Jev resume" para continuar.'));
       return;
     }
-    if (!ready) { bot.chat('Still loading the world; please repeat the request in a moment. Stop is available now.'); return; }
+    if (!ready) { bot.chat(text('Still loading the world; please repeat the request in a moment. Stop is available now.', 'Ainda estou carregando o mundo; repita o pedido daqui a pouco. Você já pode usar stop.')); return; }
     // A literal status request reads local state immediately, even while a
     // previous natural-language request is waiting for a model response.
     if (new RegExp(`^status${controlEnd}`, 'i').test(normalized)) {
@@ -588,7 +604,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         builds: builds.describe(bot, bot.entity.position, bot.game.dimension),
         continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates,
           { speaker: requestPosition.speakerPosition }),
-        inventory, gameMode: bot.game.gameMode, dimension: bot.game.dimension,
+        inventory, gameMode: bot.game.gameMode, dimension: bot.game.dimension, language: bot._jevLanguage,
         activeGoal: active && !active.idle ? active.goal : undefined, nearbyBlocks,
       };
       const spec = literal ? { kind: 'operator_command' } : await (planner
@@ -611,7 +627,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       }
       if (spec.kind === 'operator_command') {
         const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());
-        if (!allowed.includes(from.toLowerCase())) { bot.chat(`${from} is not enabled for Jev's operator commands`); return; }
+        if (!allowed.includes(from.toLowerCase())) { bot.chat(text(`${from} is not enabled for Jev's operator commands`, `${from} não tem permissão para pedir comandos de operador ao Jev`)); return; }
         const resolution = literal ? { command: literal } : await classifyCommand(requestClient, bot, request, from);
         if (revision !== generation) return;
         const command = commandAccess.accept(data, { resolvedCommand: resolution.command, interpretation: { routing: spec.interpretation, command: resolution.judgments } });
@@ -627,11 +643,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         };
         bot.on('messagestr', collect);
         try {
-          bot.chat(`Running your command once: ${command.command}`);
+          bot.chat(text(`Running your command once: ${command.command}`, `Executando seu comando uma vez: ${command.command}`));
           command.dispatch();
           await new Promise(resolve => setTimeout(resolve, 1000));
         } finally { bot.removeListener('messagestr', collect); }
-        for (const reply of feedback) bot.chat(`Command response: ${reply}`);
+        for (const reply of feedback) bot.chat(text(`Command response: ${reply}`, `Resposta do comando: ${reply}`));
         return;
       }
       if (spec.kind === 'status') {
@@ -639,11 +655,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'other') {
-        bot.chat(planner ? spec.message : 'Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.');
+        bot.chat(planner ? spec.message : text('Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.', 'Peça itens ou um conjunto completo, um bioma ou criatura para encontrar, alguém para seguir ou uma estrutura para construir.'));
         return;
       }
       if (spec.kind === 'memory') {
-        bot.chat(memory.handle(spec, { world: world.known }));
+        bot.chat(memory.handle(spec, { world: world.known, bot }));
         if (active?.goal.from === from) active.goal.memoryContext = memory.context(from);
         observation?.sample('memory', { operation: spec.memory.operation });
         return;
@@ -655,24 +671,24 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         if (operation === 'set_custom') {
           // The text routes as a request; a survival route may still not exist for it.
           const impossible = unworkable(bot, spec.dream.probe);
-          if (impossible) { bot.chat(`I can't keep that as a dream. ${friendlyProblem(impossible)}`); return; }
+          if (impossible) { bot.chat(text(`I can't keep that as a dream. ${friendlyProblem(impossible, { bot })}`, `Não posso guardar isso como sonho. ${friendlyProblem(impossible, { bot })}`)); return; }
         }
         if (operation === 'query') {
-          bot.chat(dreamReport(standing, store.read()));
+          bot.chat(reportDream(standing, store.read()));
         } else if (operation === 'clear') {
           if (standing.ledgerRun) ledger.close(standing.ledgerRun, 'cleared');
           saveDream({ dream: null, clearedBy: from, clearedAt: new Date().toISOString() });
           if (active && !active.idle && active.goal.dream) await stop('cancelled');
-          bot.chat('Okay, no dream for now. I\'ll just look after myself between requests.');
+          bot.chat(text('Okay, no dream for now. I\'ll just look after myself between requests.', 'Certo, sem sonho por enquanto. Vou apenas cuidar de mim entre os pedidos.'));
         } else if (operation === 'pause') {
-          if (!standing.dream) bot.chat("I don't have a dream to set aside.");
+          if (!standing.dream) bot.chat(text("I don't have a dream to set aside.", 'Não tenho um sonho para deixar de lado.'));
           else {
             saveDream({ ...standing, paused: true, pausedBy: from, pausedAt: new Date().toISOString() });
             if (active && !active.idle && active.goal.dream) await stop('interrupted');
-            bot.chat(`Okay, I'll set my dream aside for now. Say "chase your dream" when you want me back on it.`);
+            bot.chat(text(`Okay, I'll set my dream aside for now. Say "chase your dream" when you want me back on it.`, 'Certo, vou deixar meu sonho de lado por enquanto. Diga "chase your dream" quando quiser que eu continue.'));
           }
         } else if (operation === 'resume') {
-          if (!standing.dream) bot.chat(dreamReport(null));
+          if (!standing.dream) bot.chat(reportDream(null));
           else {
             // Chasing a satisfied dream again is a new run; picking up a paused one is not.
             // A custom dream begins afresh from a resume: its earlier finish or failures are behind it.
@@ -682,7 +698,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
             // A stop paused the survival loop with everything else; taking the
             // dream up again takes that up too, or nothing would run it.
             survival.state.paused = false; saveSurvival();
-            bot.chat(`Back to my dream: to ${title}.`);
+            bot.chat(text(`Back to my dream: to ${title}.`, `Voltando ao meu sonho: ${localizedDreamTitle(standing)}.`));
             const saved = store.read();
             if (saved?.dream && (standing.dream !== 'custom' || saved.dream === 'custom') && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) {
               if (standing.dream === 'custom') saved.dreamSetAt = fresh.setAt ?? standing.setAt;
@@ -693,8 +709,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           if (standing.ledgerRun && !standing.satisfiedAt) ledger.close(standing.ledgerRun, 'replaced');
           const text = spec.dream.text;
           saveDream({ dream: key, ...(key === 'custom' && { text }), setBy: from, setAt: new Date().toISOString(), ledgerRun: ledger.open({ kind: 'dream', name: dreamName(key, text) }).id });
-          bot.chat(key === 'custom' ? `Got it. My dream is to ${text}. I'll do it once, whenever nothing else needs me.`
-            : `Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`);
+          bot.chat(key === 'custom' ? localize(bot, `Got it. My dream is to ${text}. I'll do it once, whenever nothing else needs me.`, `Entendido. Meu sonho é ${text}. Vou realizá-lo uma vez quando estiver livre.`)
+            : localize(bot, `Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`, `Entendido. Meu sonho é ${localizedDreamTitle({ dream: key })}. Vou segui-lo quando estiver livre.`));
         }
         observation?.sample('dream', { operation, key, standing: dreamStore.read() });
         return;
@@ -705,7 +721,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           confirm: ['uncertain_interaction', 'dream_unsure'].includes(reason), which: ['no_item', 'no_discovery_target', 'ambiguous_item', 'incomplete_bundle'].includes(reason) });
         bot.chat(spec.message); return;
       }
-      if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat('Stopped.'); return; }
+      if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat(text('Stopped.', 'Parei.')); return; }
       if (spec.kind === 'resume') {
         await resume(revision); return;
       }
@@ -716,7 +732,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       // work that can be done. "Get me bedrock" stopped a build, then was
       // parked as impossible, and the build had to be dug out with resume.
       const impossible = unworkable(bot, spec);
-      if (impossible) { bot.chat(`${friendlyProblem(impossible)}${active && !active.idle ? " I'll carry on with what I was doing." : ''}`); return; }
+      if (impossible) { bot.chat(`${friendlyProblem(impossible, { bot })}${active && !active.idle ? text(" I'll carry on with what I was doing.", ' Vou continuar o que estava fazendo.') : ''}`); return; }
       await stop('replaced');
       if (revision !== generation || ended) return;
       const goal = { ...spec, ledgerRun: run.id, version: 1, status: 'pending', createdAt: new Date().toISOString(),
@@ -725,22 +741,22 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         initialInventory: bot.inventory.items().map(i => ({ name: i.name, count: i.count })) };
       saveGoal(goal);
       const changing = spec.kind === 'build' && spec.buildContinuation?.name &&
-        { edit: `I'll work out what to change about ${spec.buildContinuation.name}.`,
-          finish: `I'll carry on with ${spec.buildContinuation.name}.`,
-          repair: `I'll look ${spec.buildContinuation.name} over and put right what is missing.`,
+        { edit: text(`I'll work out what to change about ${spec.buildContinuation.name}.`, `Vou planejar as alterações em ${spec.buildContinuation.name}.`),
+          finish: text(`I'll carry on with ${spec.buildContinuation.name}.`, `Vou continuar ${spec.buildContinuation.name}.`),
+          repair: text(`I'll look ${spec.buildContinuation.name} over and put right what is missing.`, `Vou conferir ${spec.buildContinuation.name} e reparar o que estiver faltando.`),
         }[spec.buildContinuation.mode];
       bot.chat(planner ? spec.message : changing ? changing :
-        spec.kind === 'build' ? "I'll make a plan, find a good spot, and build it for you." :
-        spec.kind === 'bundle' ? `Working on the whole list: ${bundleSummary(spec)}.` :
-        spec.kind === 'find' ? `I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.` :
-        spec.kind === 'house' ? `Building a small ${spec.material} house with a floor, doorway and roof.` :
-        ['obtain', 'craft'].includes(spec.kind) ? `I'll get ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.` :
-        spec.kind === 'visit' ? `I'll head to ${spec.destination.label}.` :
-        spec.kind === 'come' ? `Coming to ${spec.target}.` : spec.kind === 'follow' ? `Following ${spec.target}; say Jev stop to stop.` :
-        spec.kind === 'win' ? "Let's beat the dragon! I'll gather supplies and take it one step at a time." :
-        "I'll get a Nether portal working, then go through to check it.");
+        spec.kind === 'build' ? text("I'll make a plan, find a good spot, and build it for you.", 'Vou planejar, encontrar um bom lugar e construir para você.') :
+        spec.kind === 'bundle' ? text(`Working on the whole list: ${bundleSummary(spec)}.`, `Vou cuidar de toda a lista: ${(spec.tasks || []).map(t => `${t.count} ${displayName(t.item, bot)}`).join(', ')}.`) :
+        spec.kind === 'find' ? text(`I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.`, `Vou procurar ${displayName(spec.discoveryTarget.name, bot)} e avisar onde encontrar.`) :
+        spec.kind === 'house' ? text(`Building a small ${spec.material} house with a floor, doorway and roof.`, `Vou construir uma pequena casa de ${displayName(spec.material, bot)}, com piso, entrada e telhado.`) :
+        ['obtain', 'craft'].includes(spec.kind) ? text(`I'll get ${spec.count} ${spec.item.replaceAll('_', ' ')}${spec.deliver ? ` for ${from}` : ''}.`, `Vou conseguir ${spec.count} ${displayName(spec.item, bot)}${spec.deliver ? ` para ${from}` : ''}.`) :
+        spec.kind === 'visit' ? text(`I'll head to ${spec.destination.label}.`, `Vou até ${spec.destination.label}.`) :
+        spec.kind === 'come' ? text(`Coming to ${spec.target}.`, `Indo até ${spec.target}.`) : spec.kind === 'follow' ? text(`Following ${spec.target}; say Jev stop to stop.`, `Vou seguir ${spec.target}; diga Jev stop para parar.`) :
+        spec.kind === 'win' ? text("Let's beat the dragon! I'll gather supplies and take it one step at a time.", 'Vamos derrotar o dragão! Vou reunir os recursos e avançar uma etapa por vez.') :
+        text("I'll get a Nether portal working, then go through to check it.", 'Vou ativar um portal do Nether e atravessar para conferir.'));
       launch(goal); launched = true;
-    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(intakeProblem(err)); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
+    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(intakeProblem(err, bot)); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
   });
 
   bot.once('spawn', async () => {
@@ -769,15 +785,15 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (ended || !bot.isAlive) return;
       ready = true;
       console.log(JSON.stringify({ sessionReady: true, username: bot.username }));
-      if (planner) { bot.chat('Aguardando seu pedido. Continuo atento a perigos. Diga "Jev retome" para continuar uma tarefa salva.'); return; }
+      if (planner) { announce(bot, text('Waiting for your request. I am still watching for danger. Say "Jev resume" to continue a saved task.', 'Aguardando seu pedido. Continuo atento a perigos. Diga "Jev resume" para continuar uma tarefa salva.')); return; }
       const saved = store.read();
       if (saved && ['running', 'recovering'].includes(saved.status) && !survival.state.paused) {
-        bot.chat(survival.state.recovery?.status === 'pending' ? "I'm back! I'll look for my dropped items, then carry on." : "I'm back! I'll carry on where I left off.");
+        announce(bot, survival.state.recovery?.status === 'pending' ? text("I'm back! I'll look for my dropped items, then carry on.", 'Voltei! Vou procurar meus itens perdidos e depois continuar.') : text("I'm back! I'll carry on where I left off.", 'Voltei! Vou continuar de onde parei.'));
         // What was tried, judged by its own clock: moved on by the time the
         // save lay unplayed (a restart, a trial begun from a stage's save).
         require('./tried').resumed(saved, { savedAt: Date.parse(saved.updatedAt) });
         launch(saved);
-      } else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
+      } else announce(bot, text('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".', 'Me chame de Jev: "Jev venha aqui", "Jev me siga", "Jev faça um baú" ou "Jev consiga 8 escadas de bétula".'));
     } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
   });
   // The game's death message for this bot, kept for the death record: the

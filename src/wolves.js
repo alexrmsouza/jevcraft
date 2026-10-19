@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // Wolves: tamed with bones, a companion that fights skeletons and zombies
 // beside the bot and costs nothing to keep. The user, 2026-09-23, asked for
 // wolves and more breeding.
@@ -107,7 +108,7 @@ async function tameWolf(bot, task, goal, save, { navigate }) {
   }
   if (!tamed(bot, wolf)) { setAside(goal, 'tame_wolf', wolf.id, 'bones gone before it took', 20 * 60 * 1000); save(); return false; }
   (goal.wolves ||= []).push({ id: wolf.id, uuid: wolf.uuid, tamedAt: new Date().toISOString() }); save();
-  bot.chat?.(`Tamed a wolf. It'll follow me and fight beside me.`);
+  notify(bot, `Tamed a wolf. It'll follow me and fight beside me.`, 'Domei um lobo. Ele vai me seguir e lutar ao meu lado.', 'important');
   return true;
 }
 
@@ -124,7 +125,7 @@ async function commandWolves(bot, task, goal, save, sit) {
     await sleep(300);
   }
   goal.wolfOrder = { sit, at: new Date().toISOString(), wolves: wolves.length }; save();
-  if (sit) bot.chat?.(wolves.length === 1 ? 'Stay here. Back soon.' : `Stay here, all ${wolves.length} of you. Back soon.`);
+  if (sit) notify(bot, wolves.length === 1 ? 'Stay here. Back soon.' : `Stay here, all ${wolves.length} of you. Back soon.`, wolves.length === 1 ? 'Fique aqui. Já volto.' : `Fiquem aqui, vocês ${wolves.length}. Já volto.`);
   return true;
 }
 

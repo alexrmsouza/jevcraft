@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { formatItems } = require('./language');
 // Blaze rods in a chest in the Nether (note 704). The user: "With low life
 // and multiple rods, is it worth storing them in a chest or something?" A
 // death drops everything carried, the bot comes back to life in the
@@ -238,7 +240,7 @@ function carriedSays(offer) {
 // Put them in. -> true when stored.
 // `opts` (rod-bank.js, note 760): the step's name, the rest a failure takes
 // ([kind, key]) and the chat once stored.
-async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_rods', rest = ['rod_stash', 'here'], chat = null, keepBack = null } = {}) {
+async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_rods', rest = ['rod_stash', 'here'], chat = null, chatPortuguese = null, keepBack = null } = {}) {
   const moves = offer.what;
   goal.step = { action: step, items: moves, at: offer.existing ? offer.existing.position : P(offer.site.cell) }; save?.();
   try {
@@ -275,7 +277,9 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
     entry.storedAt = new Date().toISOString(); save?.();
     try { require('./after-rod').noteRods(bot); } catch (_) { /* no record */ }
     const what = listed(Object.fromEntries(stored.map(m => [m.item, m.count])));
-    bot.chat?.(chat ? chat(what, at(entry.position)) : `Left ${what} in a chest at ${at(entry.position)}. I'll take them on the way out.`);
+    const localized = formatItems(Object.fromEntries(stored.map(m => [m.item, m.count])), bot);
+    notify(bot, chat ? chat(what, at(entry.position)) : `Left ${what} in a chest at ${at(entry.position)}. I'll take them on the way out.`,
+      chatPortuguese ? chatPortuguese(localized, at(entry.position)) : `Guardei ${localized} em um baú em ${at(entry.position)}. Vou buscar os itens na saída.`, 'important');
     return true;
   } catch (err) {
     task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
@@ -426,7 +430,8 @@ async function collect(bot, task, goal, save, actions = {}) {
     try { if (await require('./mob-hunt').pearlsNow(bot, task, goal, save, actions, task.opportunityClient, { any: true }) === 'kept') return true; }
     catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
-  if (!entry.announced) { entry.announced = true; bot.chat?.(`Taking ${listed(entry.contents)} out of the chest at ${key}${entry.dimension === 'nether' ? ' before the portal' : ''}.`); }
+  if (!entry.announced) { entry.announced = true; notify(bot, `Taking ${listed(entry.contents)} out of the chest at ${key}${entry.dimension === 'nether' ? ' before the portal' : ''}.`,
+    `Vou retirar ${formatItems(entry.contents, bot)} do baú em ${key}${entry.dimension === 'nether' ? ' antes de atravessar o portal' : ''}.`); }
   try {
     // Far off in the Overworld (the eyes left behind for the stronghold's
     // search, eye-bank.js, note 1197), the way back is walked a leg at a
@@ -505,7 +510,8 @@ async function collect(bot, task, goal, save, actions = {}) {
       }
       return done;
     });
-    if (taken.length) { entry.takenAt = new Date().toISOString(); bot.chat?.(`Took ${listed(Object.fromEntries(taken.map(m => [m.item, m.count])))} back out of the chest.`); }
+    if (taken.length) { entry.takenAt = new Date().toISOString(); notify(bot, `Took ${listed(Object.fromEntries(taken.map(m => [m.item, m.count])))} back out of the chest.`,
+      `Recuperei ${formatItems(Object.fromEntries(taken.map(m => [m.item, m.count])), bot)} do baú.`, 'important'); }
     if (withContents(entry)) throw new Error(`Still in the chest: ${listed(entry.contents)} (${entry.lastWithdrawError || 'no room in the pockets?'})`);
     save?.();
     return true;
@@ -515,9 +521,11 @@ async function collect(bot, task, goal, save, actions = {}) {
     // Not there: lost, and no longer counted. Not reached three times: given
     // up, said, and no longer counted, so the ladder does not cross the
     // portal and back for it.
-    if (entry.lostAt) bot.chat?.(`The chest at ${key} is gone, and ${listed(entry.contents)} with it.`);
+    if (entry.lostAt) notify(bot, `The chest at ${key} is gone, and ${listed(entry.contents)} with it.`,
+      `O baú em ${key} desapareceu, junto com ${formatItems(entry.contents, bot)}.`, 'important');
     // A chest stood at whose things would not come out is not written off: it rests, and is tried again.
-    else if (entry.takeFails >= TAKE_TRIES && !eyesIn(entry) && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
+    else if (entry.takeFails >= TAKE_TRIES && !eyesIn(entry) && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); notify(bot, `I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`,
+      `Não consigo voltar ao baú em ${key}. Vou continuar sem ${formatItems(entry.contents, bot)}.`, 'important'); }
     else setAside(goal, 'rod_stash_take', key, err, TAKE_REST_MS);
     save?.();
     return false;

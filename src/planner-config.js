@@ -1,6 +1,7 @@
 'use strict';
 
 async function configuredPlanner({ env = process.env, signal, auth, createClient } = {}) {
+  require('./communication').createCommunicationPolicy({ host: env.MC_HOST || 'localhost', language: env.JEV_LANGUAGE, narration: env.JEV_NARRATION });
   const provider = env.JEV_PLANNER || 'jev';
   if (provider === 'jev') return { provider, planner: null };
   if (provider !== 'chatgpt') throw new Error('JEV_PLANNER must be jev or chatgpt.');

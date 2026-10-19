@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // Strategy on the way to the dragon: of the things open now, which next.
 const { Vec3 } = require('vec3');
 // The ladder's order is the code's answer when Jev cannot be reached, and
@@ -829,7 +830,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // An optional rung chosen goes on the ladder (note 776) before the hold
     // reads the rungs open, so its own opening is not a new rung.
     if (options[choice]?.optIn && rungPhase) require('./game-progress').optIn(goal, rungPhase);
-    if (options[choice]?.bedFirst) { goal.bedFirst = { at: now() }; bot.chat?.('A bed first: the nights are what kill.'); }
+    if (options[choice]?.bedFirst) { goal.bedFirst = { at: now() }; notify(bot, 'A bed first: the nights are what kill.', 'Uma cama primeiro, para evitar os perigos da noite.'); }
     if (last?.rungPhase && last.open && rungPhase !== last.rungPhase) console.log(`[strategy] reversal: ${choice} (${rungPhase ? label(rungPhase) : 'no rung'}) chosen over ${label(last.choice)}, with ${label(last.rungPhase)} still open and nothing decided about it since it was chosen ${agoWords(now() - last.at)} ago`);
     goal.strategy = { choice, rungPhase, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev',
       ...(rungPhase || TO_THE_NETHER.test(choice) ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}),
@@ -842,7 +843,14 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // the rung", and the climb of 29 blocks to the surface was taken.
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) require('./tried').cut(goal, `left for ${label(choice)} (win_strategy)`, Date.now(), { before: askedAt });
     save();
-    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].chat ? options[choice].chat : options[choice].side || options[choice].says ? `Before ${spoken(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `${Spoken(options[choice].rung.phase)} first, then ${spoken(stage.phase)}.`);
+    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) {
+      const option = options[choice];
+      const portuguese = choice === 'nether_first' ? 'Vou deixar as outras preparações para depois e seguir para o Nether agora.'
+        : /pearl|enderman/.test(choice) && option.chat ? 'Vou caçar endermen para conseguir as pérolas primeiro.'
+          : option.side || option.says ? `Vou resolver uma preparação antes de continuar com ${spoken(stage.phase, bot)}.`
+            : `${Spoken(option.rung.phase, bot)} primeiro; depois, ${spoken(stage.phase, bot)}.`;
+      notify(bot, option.chat ? option.chat : option.side || option.says ? `Before ${spoken(stage.phase)}, ${option.says || choice.replaceAll('_', ' ')}.` : `${Spoken(option.rung.phase)} first, then ${spoken(stage.phase)}.`, portuguese);
+    }
   }
   const option = heldOption || options[choice];
   // A rung set aside, taken back: its rest cut short and said (note 694).
@@ -850,7 +858,8 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     const gp = require('./game-progress');
     const entry = attemptsFor(goal).of('rung')[option.takeBack];
     gp.takeBackRung(goal, option.takeBack); save();
-    bot.chat?.(`Back to ${spoken(option.takeBack)} after all${entry ? `: I set it aside ${gp.agoSays(Date.now() - entry.at)} ago` : ''}.`);
+    notify(bot, `Back to ${spoken(option.takeBack)} after all${entry ? `: I set it aside ${gp.agoSays(Date.now() - entry.at)} ago` : ''}.`,
+      `Vou retomar ${spoken(option.takeBack, bot)}${entry ? ', que eu havia deixado para depois' : ''}.`);
   }
   if (option.stage) return null;
   // A step set aside to go without, taken up again now.

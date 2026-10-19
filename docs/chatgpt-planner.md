@@ -58,7 +58,7 @@ This first version supports one obtain/craft goal at a time, conversation and
 clarification. It asks for clarification about unsupported or ambiguous work.
 Literal operator commands retain the existing authorization checks.
 
-`Jev pare`, `Jev retome` and `Jev status` use local controls. A stop cancels
+`Jev stop`, `Jev resume` and `Jev status` use local controls. A stop cancels
 pending planning so a late model response cannot restart work. English controls
 remain available. Use `JEV_PLANNER=jev` to restore the original interpreter.
 That original mode also retains JevCraft's autonomous work between requests.
@@ -82,8 +82,8 @@ Use ordinary chat messages, not Minecraft slash commands:
 
 ```text
 !jev chat
-!jev chat aberto
-!jev chat nome
+!jev chat open
+!jev chat named
 !jev chat auto
 ```
 
@@ -97,6 +97,53 @@ overrides saved chat settings. Leave it unset to allow persistent chat changes.
 Open mode sends ordinary player messages to the planner, so it can use more
 ChatGPT plan allowance than named mode. Clarification and local task controls
 retain their existing handling.
+
+## Language and narration
+
+These settings work with both `JEV_PLANNER=chatgpt` and the original Jev
+interpreter. They change player-facing language and unsolicited chat without
+adding model calls or interrupting the current task. Commands and configuration
+names remain in English in either language.
+
+```dotenv
+JEV_LANGUAGE=pt-BR
+JEV_NARRATION=full
+```
+
+The defaults are `en-US` and `full`. Supported languages are `en-US` and `pt-BR`.
+Language and narration choices saved in game override environment defaults on
+the next connection. Invalid environment defaults fail startup before
+authentication or the Minecraft connection.
+
+```text
+!jev language
+!jev language pt-BR
+!jev language en-US
+!jev narration
+!jev narration off
+!jev narration important
+!jev narration full
+```
+
+| Narration | Unsolicited messages |
+| --- | --- |
+| `off` | None; direct replies and control acknowledgements still work. |
+| `important` | Dangers, failures, blockages and task completion. |
+| `full` | Important messages, startup greetings and task progress. |
+
+Status replies, clarification questions, task acknowledgements and command
+permission errors are direct replies and remain available in every mode.
+Changing narration affects chat only; defensive behavior continues as usual.
+The selected language also goes to the ChatGPT planner for its replies and
+clarification options. Minecraft item identifiers remain unchanged internally.
+
+Any known player may query settings. Mutations require a name in
+`JEV_CHAT_ADMINS`; without that list, only the sole other player on a loopback
+server may change them. The bot ignores its own chat. Changes take effect
+immediately and are saved per server/port/bot identity in the ignored
+`<identity>-communication.json` state file. Existing chat addressing settings
+stay in their separate chat-policy file; an explicit `JEV_CHAT_MODE` still fixes
+that addressing mode.
 
 Only the request and a compact game snapshot go to the planner: the player and
 bot names, inventory, observed nearby block names, game mode, dimension and

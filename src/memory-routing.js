@@ -1,4 +1,5 @@
 'use strict';
+const { localize } = require('./language');
 const { parseAddress } = require('./chat-address');
 const { position, dimension } = require('./memory');
 
@@ -36,6 +37,7 @@ async function select(client, state, entries, id, specials = { none: 'No saved e
   return Object.hasOwn(specials, answer) ? answer : entries[Number(answer.slice(6))];
 }
 async function resolveMemory(client, spec, username, context) {
+  const say = (english, portuguese) => localize(context.language, english, portuguese);
   const body = parseAddress(spec.request, username).text;
   const memory = context.memory || { places: [], notes: [], history: [] };
   const state = { request: body, speaker: spec.from, memory,
@@ -46,8 +48,8 @@ async function resolveMemory(client, spec, username, context) {
   // Forgetting cannot be undone, so it needs a surer answer than recalling.
   // Confidence scales with cost: a coin-flip "forget" is a question back.
   const sure = answer => !Number.isFinite(answer?.confidence) || answer.confidence >= FORGET_CONFIDENCE;
-  if (operation === 'forget' && !sure(response.answers.operation)) return clarify('Do you want me to forget something? Say exactly what, like "Jev forget the old base".');
-  if (operation === 'none') return clarify('You can ask me to remember a place or a note, recall it, or forget it.');
+  if (operation === 'forget' && !sure(response.answers.operation)) return clarify(say('Do you want me to forget something? Say exactly what, like "Jev forget the old base".', 'Você quer que eu esqueça algo? Diga exatamente o quê, como "Jev forget the old base".'));
+  if (operation === 'none') return clarify(say('You can ask me to remember a place or a note, recall it, or forget it.', 'Você pode pedir para eu guardar um lugar ou uma nota, consultar uma lembrança ou esquecê-la.'));
   if (!['remember_place', 'remember_note', 'recall', 'forget', 'visit', 'repeat'].includes(operation)) throw new Error('Invalid memory operation');
   if (operation === 'remember_place') {
     const entries = labelCandidates(body).map(label => ({ label, description: label }));
@@ -60,7 +62,7 @@ async function resolveMemory(client, spec, username, context) {
       select(client, state, entries, 'memory_place_name'),
       select(client, { ...state, observedLocations: locations }, locations, 'memory_place_location', { none: 'No offered observed location matches what the player is naming.' }),
     ]);
-    if (typeof name === 'string' || typeof location === 'string') return clarify('Stand at the place and say "Jev remember this as home", or give me its x, y, z coordinates.');
+    if (typeof name === 'string' || typeof location === 'string') return clarify(say('Stand at the place and say "Jev remember this as home", or give me its x, y, z coordinates.', 'Fique no local e diga "Jev remember this as home", ou informe as coordenadas x, y, z.'));
     if (location.explicitCoordinates) {
       const dim = await select(client, state, ['overworld', 'nether', 'end'].map(d => ({ dimension: d, description: d })),
         'memory_place_dimension', {}, {}, { current: dimension(context.dimension) });
@@ -82,18 +84,18 @@ async function resolveMemory(client, spec, username, context) {
   const seen = {};
   const selected = await select(client, state, entries, 'memory_entry',
     { none: 'No unambiguous saved entry matches.', ...(['recall', 'forget'].includes(operation) && { all: operation === 'forget' ? 'The speaker explicitly wants to forget ALL of their saved memories.' : 'The speaker asks generally what is remembered, without a particular subject.' }) }, seen);
-  if (selected === 'none') return clarify("I don't remember that yet. You can tell me a place or a note to save.");
+  if (selected === 'none') return clarify(say("I don't remember that yet. You can tell me a place or a note to save.", 'Ainda não me lembro disso. Você pode me dizer um lugar ou uma nota para guardar.'));
   // Wiping every memory needs the player to have said so in as many words,
   // and Jev to be sure of it: a vague "forget it" is not "forget everything".
   if (operation === 'forget' && (!sure(seen) || (selected === 'all' && !/\b(everything|all)\b/i.test(body)))) {
-    return clarify(selected === 'all' ? 'To wipe everything I remember about you, say "Jev forget everything".' : 'Which memory should I forget? Name it, like "Jev forget the old base".');
+    return clarify(selected === 'all' ? say('To wipe everything I remember about you, say "Jev forget everything".', 'Para apagar tudo que lembro sobre você, diga "Jev forget everything".') : say('Which memory should I forget? Name it, like "Jev forget the old base".', 'Qual lembrança devo apagar? Diga o nome dela, como "Jev forget the old base".'));
   }
   if (operation === 'visit') return { ...spec, kind: 'visit', destination: { id: selected.id, label: selected.label, position: selected.position, dimension: selected.dimension } };
   // A repeated build, trip or dragon hunt is as costly as asking for it
   // fresh, and was let through at the memory bar of one in two.
   if (operation === 'repeat' && REPEAT_COSTLY.has(selected.intent?.kind) &&
       [response.answers.operation, seen].some(answer => Number.isFinite(answer?.confidence) && answer.confidence < REPEAT_CONFIDENCE)) {
-    return clarify(`Do you want me to do "${selected.request}" again? Ask me for it directly and I'll start.`);
+    return clarify(say(`Do you want me to do "${selected.request}" again? Ask me for it directly and I'll start.`, `Você quer que eu faça "${selected.request}" de novo? Peça diretamente e eu começo.`));
   }
   if (operation === 'repeat') return { ...structuredClone(selected.intent), from: spec.from, askedAs: spec.request, repeatedMemoryId: selected.id, interpretation: spec.interpretation };
   return { ...spec, memory: { operation, targetId: selected === 'all' ? 'all' : selected.id, ...(String(selected.id).startsWith('found:') && { found: selected }) } };

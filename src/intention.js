@@ -1,4 +1,6 @@
 'use strict';
+const { isPortuguese, localize, displayName } = require('./language');
+const { announce } = require('./communication');
 // One committed intention at a time (note 689).
 //
 // Several loops ask questions about what the work does next (fortress_leg,
@@ -189,50 +191,55 @@ function portalBack(bot, goal) {
 // What the bot says as it starts, by answer; null stays quiet (the legs say
 // their own "I'm looking for a fortress (leg 7)").
 const SAYS = [
-  [/^fortress_leg\/back_to_fortress$/, 'Going back to the fortress', 'rods'],
-  [/^fortress_leg\/go_to_blazes(_about)?$/, 'Going to where blazes were seen', 'rods'],
-  [/^fortress_leg\/go_to_spawner(_\d+)?$/, 'Going back to the spawner', 'rods'],
-  [/^fortress_leg\/wait_at_spawner$/, 'Waiting by the spawner for blazes', 'rods'],
-  [/^fortress_leg\/stay_in_fortress$/, 'Staying in the fortress for blazes', 'rods'],
-  [/^fortress_leg\/unwalked_\d+$/, 'Crossing to a part of the fortress not yet walked', 'rods'],
-  [/^fortress_leg\/seek_fortress_height$/, 'Digging to the height fortresses stand at', null],
-  [/^(fortress_leg|fortress_approach)\/(restock_blocks|blocks_then_cross)$/, 'Digging netherrack for blocks to build with', 'blocks'],
-  [/\/blocks_then_pillar$/, 'Digging blocks to pillar up to the fortress', 'blocks'],
-  [/^(fortress_leg|stillness_detour|rung_progress)\/pillar_up$/, 'Pillaring up to the fortress floor', 'rods'],
-  [/^(fortress_leg|fortress_approach)\/return_for_blocks$/, 'Going back through the portal for', 'kit'],
-  [/^fortress_leg\/back_to_ground$/, 'Walking back to the rock last stood on for blocks', 'blocks'],
-  [/\/fetch_stems$/, 'Fetching stems for a pickaxe', 'pickaxe'],
-  [/^fortress_visit\/go_in$/, 'Going into the fortress', 'rods'],
-  [/^fortress_visit\/heal_first$/, 'Healing before going into the fortress', 'health'],
-  [/^(fortress_visit|leave_nether)\/go_back$|\/return_for_food$/, 'Going back through the portal for food', 'food'],
-  [/\/(restock_food|get_food_here)$/, 'Getting food here first', 'food'],
-  [/^(restock_food|fortress_visit)\/hoglin_\w+$/, 'Hunting a hoglin for food', 'food'],
-  [/^restock_food\/cook_meat$/, 'Cooking the raw meat carried', 'food'],
-  [/^nether_gather\/portal_trip$/, 'Going back through the portal for wood', 'pickaxe'],
-  [/^nether_gather\/(walk_to|cross_to|floor_to)_\d+$|^nether_gather\/wood_in_view$/, 'Going for', 'for'],
-  [/^empty_spawner\/stand_by_spawner$/, 'Standing by the spawner for blazes', 'rods'],
-  [/^portal_plan\/build_new$/, 'Building a portal frame from obsidian', null],
-  [/^portal_plan\/((here|beside|new_site)_(pool_\d+|deep|sight)|clear_blocker|other_stand)$/, 'Casting a portal frame from lava and water', null],
-  [/^portal_plan\/into_cave$/, 'Going down into the cave under the way to the lava', null],
-  [/^portal_plan\/ruin_\d+$/, 'Finishing and lighting the remembered ruined portal', null],
-  [/^surface_trip\/climb$/, 'Climbing to open sky', null],
-  [/^surface_trip\/mine_first$/, 'Mining the ore in view before climbing', null],
-  [/^surface_trip\/dig_site$/, 'Digging a portal site out of the rock here', null],
+  [/^fortress_leg\/back_to_fortress$/, 'Going back to the fortress', 'rods', 'Vou voltar à fortaleza'],
+  [/^fortress_leg\/go_to_blazes(_about)?$/, 'Going to where blazes were seen', 'rods', 'Vou até onde os blazes foram vistos'],
+  [/^fortress_leg\/go_to_spawner(_\d+)?$/, 'Going back to the spawner', 'rods', 'Vou voltar ao gerador de criaturas'],
+  [/^fortress_leg\/wait_at_spawner$/, 'Waiting by the spawner for blazes', 'rods', 'Vou esperar pelos blazes perto do gerador de criaturas'],
+  [/^fortress_leg\/stay_in_fortress$/, 'Staying in the fortress for blazes', 'rods', 'Vou ficar na fortaleza à espera de blazes'],
+  [/^fortress_leg\/unwalked_\d+$/, 'Crossing to a part of the fortress not yet walked', 'rods', 'Vou atravessar até uma parte da fortaleza que ainda não explorei'],
+  [/^fortress_leg\/seek_fortress_height$/, 'Digging to the height fortresses stand at', null, 'Vou cavar até a altura das fortalezas'],
+  [/^(fortress_leg|fortress_approach)\/(restock_blocks|blocks_then_cross)$/, 'Digging netherrack for blocks to build with', 'blocks', 'Vou minerar netherrack para ter blocos de construção'],
+  [/\/blocks_then_pillar$/, 'Digging blocks to pillar up to the fortress', 'blocks', 'Vou minerar blocos para subir até a fortaleza'],
+  [/^(fortress_leg|stillness_detour|rung_progress)\/pillar_up$/, 'Pillaring up to the fortress floor', 'rods', 'Vou subir colocando blocos até o piso da fortaleza'],
+  [/^(fortress_leg|fortress_approach)\/return_for_blocks$/, 'Going back through the portal for', 'kit', 'Vou voltar pelo portal para buscar'],
+  [/^fortress_leg\/back_to_ground$/, 'Walking back to the rock last stood on for blocks', 'blocks', 'Vou voltar à última rocha onde estive para buscar blocos'],
+  [/\/fetch_stems$/, 'Fetching stems for a pickaxe', 'pickaxe', 'Vou buscar caules para fazer uma picareta'],
+  [/^fortress_visit\/go_in$/, 'Going into the fortress', 'rods', 'Vou entrar na fortaleza'],
+  [/^fortress_visit\/heal_first$/, 'Healing before going into the fortress', 'health', 'Vou me recuperar antes de entrar na fortaleza'],
+  [/^(fortress_visit|leave_nether)\/go_back$|\/return_for_food$/, 'Going back through the portal for food', 'food', 'Vou voltar pelo portal para buscar comida'],
+  [/\/(restock_food|get_food_here)$/, 'Getting food here first', 'food', 'Vou conseguir comida por aqui primeiro'],
+  [/^(restock_food|fortress_visit)\/hoglin_\w+$/, 'Hunting a hoglin for food', 'food', 'Vou caçar um hoglin para conseguir comida'],
+  [/^restock_food\/cook_meat$/, 'Cooking the raw meat carried', 'food', 'Vou cozinhar a carne crua que carrego'],
+  [/^nether_gather\/portal_trip$/, 'Going back through the portal for wood', 'pickaxe', 'Vou voltar pelo portal para buscar madeira'],
+  [/^nether_gather\/(walk_to|cross_to|floor_to)_\d+$|^nether_gather\/wood_in_view$/, 'Going for', 'for', 'Vou buscar'],
+  [/^empty_spawner\/stand_by_spawner$/, 'Standing by the spawner for blazes', 'rods', 'Vou esperar pelos blazes perto do gerador de criaturas'],
+  [/^portal_plan\/build_new$/, 'Building a portal frame from obsidian', null, 'Vou construir um portal de obsidiana'],
+  [/^portal_plan\/((here|beside|new_site)_(pool_\d+|deep|sight)|clear_blocker|other_stand)$/, 'Casting a portal frame from lava and water', null, 'Vou moldar o portal com lava e água'],
+  [/^portal_plan\/into_cave$/, 'Going down into the cave under the way to the lava', null, 'Vou descer na caverna sob o caminho para a lava'],
+  [/^portal_plan\/ruin_\d+$/, 'Finishing and lighting the remembered ruined portal', null, 'Vou terminar e acender o portal em ruínas que encontrei'],
+  [/^surface_trip\/climb$/, 'Climbing to open sky', null, 'Vou subir até céu aberto'],
+  [/^surface_trip\/mine_first$/, 'Mining the ore in view before climbing', null, 'Vou minerar o minério à vista antes de subir'],
+  [/^surface_trip\/dig_site$/, 'Digging a portal site out of the rock here', null, 'Vou cavar um espaço na rocha para o portal'],
 ];
 function whySays(bot, goal, kind, state) {
   try {
-    if (kind === 'rods' && goal?.kind === 'win') { const n = require('./eye-need').need(bot, goal); return n.rodsLeft ? `${n.rodsLeft} more rod${n.rodsLeft === 1 ? '' : 's'} needed` : null; }
-    if (kind === 'food' && Number.isFinite(bot?.food)) return `hunger ${bot.food}, health ${Math.round(bot.health ?? 0)}`;
-    if (kind === 'health' && Number.isFinite(bot?.health)) return `health ${Math.round(bot.health)}`;
-    if (kind === 'pickaxe') return require('./pickaxe-roles').carriedItems(bot).some(i => /_pickaxe$/.test(i.name)) ? null : 'no pickaxe carried';
-    if (kind === 'blocks') { const n = require('./bridging').blocksCarried(bot); return Number.isFinite(n) ? `${n} blocks carried` : null; }
-    if (kind === 'kit') { const bs = require('./block-stock'), n = require('./bridging').blocksCarried(bot); return `${bs.pickaxeCarried(bot) ? 'a pickaxe' : 'no pickaxe'}, ${n} blocks carried`; }
+    if (kind === 'rods' && goal?.kind === 'win') { const n = require('./eye-need').need(bot, goal); return n.rodsLeft ? localize(bot, `${n.rodsLeft} more rod${n.rodsLeft === 1 ? '' : 's'} needed`, `ainda preciso de ${n.rodsLeft} vara${n.rodsLeft === 1 ? '' : 's'} de blaze`) : null; }
+    if (kind === 'food' && Number.isFinite(bot?.food)) return localize(bot, `hunger ${bot.food}, health ${Math.round(bot.health ?? 0)}`, `fome ${bot.food}, vida ${Math.round(bot.health ?? 0)}`);
+    if (kind === 'health' && Number.isFinite(bot?.health)) return localize(bot, `health ${Math.round(bot.health)}`, `vida ${Math.round(bot.health)}`);
+    if (kind === 'pickaxe') return require('./pickaxe-roles').carriedItems(bot).some(i => /_pickaxe$/.test(i.name)) ? null : localize(bot, 'no pickaxe carried', 'estou sem picareta');
+    if (kind === 'blocks') { const n = require('./bridging').blocksCarried(bot); return Number.isFinite(n) ? localize(bot, `${n} blocks carried`, `carrego ${n} blocos`) : null; }
+    if (kind === 'kit') { const bs = require('./block-stock'), n = require('./bridging').blocksCarried(bot); return localize(bot, `${bs.pickaxeCarried(bot) ? 'a pickaxe' : 'no pickaxe'}, ${n} blocks carried`, `${bs.pickaxeCarried(bot) ? 'com picareta' : 'sem picareta'}, carrego ${n} blocos`); }
   } catch (_) { /* said without why */ }
   return null;
 }
 // What the trip home is for, as its option says it (block-stock.js kitLacks).
 function kitSays(bot) {
-  try { const bs = require('./block-stock'); return bs.listSays(bs.kitLacks(bot)); } catch (_) { return 'a pickaxe and blocks'; }
+  try {
+    const bs = require('./block-stock'), lacks = bs.kitLacks(bot);
+    if (!isPortuguese(bot)) return bs.listSays(lacks);
+    const labels = { 'a pickaxe': 'uma picareta', blocks: 'blocos', wood: 'madeira', 'netherrack to lay spans with': 'netherrack para fazer passagens', 'stone to lay spans with': 'pedra para fazer passagens' };
+    return lacks.map(item => labels[item] || displayName(item, bot).toLocaleLowerCase('pt-BR')).join(', ').replace(/, ([^,]*)$/, ' e $1');
+  } catch (_) { return localize(bot, 'a pickaxe and blocks', 'uma picareta e blocos'); }
 }
 // leave_nether/go_back is asked for two different reasons (food, note 495;
 // or the rods carried and ready for the Overworld, note 711) and the chat
@@ -240,17 +247,21 @@ function kitSays(bot) {
 // readyForHomeStep passes `ready` in its state for this).
 function startSays(bot, goal, i, state) {
   if (state?.ready && /^leave_nether\/(go_back|heal_first)$/.test(`${i.q}/${i.choice}`)) {
-    const at = i.target ? ` at (${i.target.x}, ${i.target.y}, ${i.target.z})` : '';
-    if (i.choice === 'go_back') return `Going back through the portal with the rods carried${at}: ${whySays(bot, goal, 'rods', state) || 'the goal has what it needs'}.`;
-    return `Healing before the walk home with the rods carried: ${whySays(bot, goal, 'health', state) || ''}.`;
+    const at = i.target ? localize(bot, ` at (${i.target.x}, ${i.target.y}, ${i.target.z})`, ` em (${i.target.x}, ${i.target.y}, ${i.target.z})`) : '';
+    if (i.choice === 'go_back') return localize(bot, `Going back through the portal with the rods carried${at}: ${whySays(bot, goal, 'rods', state) || 'the goal has what it needs'}.`,
+      `Vou voltar pelo portal com as varas que carrego${at}: ${whySays(bot, goal, 'rods', state) || 'já tenho o necessário para o objetivo'}.`);
+    return localize(bot, `Healing before the walk home with the rods carried: ${whySays(bot, goal, 'health', state) || ''}.`, `Vou me recuperar antes de voltar para casa com as varas: ${whySays(bot, goal, 'health', state) || ''}.`);
   }
   const row = SAYS.find(([re]) => re.test(`${i.q}/${i.choice}`));
   if (!row) return null;
-  const at = i.target ? ` at (${i.target.x}, ${i.target.y}, ${i.target.z})` : '';
+  const at = i.target ? localize(bot, ` at (${i.target.x}, ${i.target.y}, ${i.target.z})`, ` em (${i.target.x}, ${i.target.y}, ${i.target.z})`) : '';
   // Fed, food got now is a stock-up, said so (note 702's words): 25584 said
   // "Getting food here first: hunger 20, health 20" (note 708).
   const fed = row[1] === 'Getting food here first' && (bot?.food ?? 0) >= 18;
-  const what = row[2] === 'for' ? `${row[1]} ${state?.for ? `what a ${words(state.for)} needs` : 'what is needed'}` : row[2] === 'kit' ? `${row[1]} ${kitSays(bot)}` : fed ? 'Stocking up on food here first' : row[1];
+  const prefix = localize(bot, row[1], row[3]);
+  const needed = localize(bot, state?.for ? `what a ${words(state.for)} needs` : 'what is needed',
+    state?.for ? `o necessário para ${displayName(state.for, bot).toLocaleLowerCase('pt-BR')}` : 'o que está faltando');
+  const what = row[2] === 'for' ? `${prefix} ${needed}` : row[2] === 'kit' ? `${prefix} ${kitSays(bot)}` : fed ? localize(bot, 'Stocking up on food here first', 'Vou repor minha reserva de comida por aqui primeiro') : prefix;
   const why = row[2] === 'for' ? null : whySays(bot, goal, row[2], state);
   return `${what}${at}${why ? `: ${why}` : ''}.`;
 }
@@ -434,9 +445,11 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
       // intention's own filtering (note 693's silence is for narrating a new
       // intention as Jev's choice; this says only what is happening, not who
       // decided it).
-      const line = `${words(choice)} (${words(q)}), part of ${words(i.choice)} (${words(i.q)}): back to it after.`;
+      const line = isPortuguese(bot)
+        ? `${startSays(bot, goal, { q, choice }, state) || 'Vou cumprir uma etapa necessária.'} Isso faz parte da tarefa atual; depois volto a ela.`
+        : `${words(choice)} (${words(q)}), part of ${words(i.choice)} (${words(i.q)}): back to it after.`;
       const said = bot ? (bot._intentionWaySaid ||= {}) : {};
-      if (typeof bot?.chat === 'function' && !(said.line === line && now - said.at < SAID_MS)) { said.line = line; said.at = now; try { bot.chat(line); } catch (_) { /* said in the record */ } }
+      if (typeof bot?.chat === 'function' && !(said.line === line && now - said.at < SAID_MS)) { said.line = line; said.at = now; try { announce(bot, line, 'progress'); } catch (_) { /* said in the record */ } }
     }
     return i;
   }
@@ -455,7 +468,7 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   yieldLook(bot, goal, next, now);
   const line = startSays(bot, goal, next, state);
   const said = bot ? (bot._intentionSaid ||= {}) : {};
-  if (line && typeof bot?.chat === 'function' && !(said.line === line && now - said.at < SAID_MS)) { said.line = line; said.at = now; try { bot.chat(line); } catch (_) { /* said in the record */ } }
+  if (line && typeof bot?.chat === 'function' && !(said.line === line && now - said.at < SAID_MS)) { said.line = line; said.at = now; try { announce(bot, line, 'progress'); } catch (_) { /* said in the record */ } }
   if (line) next.says = line;
   return next;
 }

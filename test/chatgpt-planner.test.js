@@ -108,3 +108,15 @@ test('invalid caller context is rejected before sending a request', async () => 
   await assert.rejects(planner.interpret('a'.repeat(2049), 'Alex', 'Jev', context), { code: 'invalid_context' });
   assert.equal(calls.length, 0);
 });
+
+for (const language of ['en-US', 'pt-BR']) test(`selected ${language} output language is authoritative in the planner contract`, async () => {
+  const { planner, calls } = fixture();
+  await planner.interpret('Jev collect logs', 'Alex', 'Jev', { ...context, language });
+  assert.equal(JSON.parse(calls[0].input).language, language);
+  assert.match(calls[0].instructions, new RegExp(`Reply in ${language === 'pt-BR' ? 'Brazilian Portuguese' : 'English'}`));
+});
+
+test('planner language defaults to English when no preference is provided', async () => {
+  const { planner, calls } = fixture(); await planner.interpret('Jev olá', 'Alex', 'Jev', context);
+  assert.equal(JSON.parse(calls[0].input).language, 'en-US'); assert.match(calls[0].instructions, /Reply in English/);
+});

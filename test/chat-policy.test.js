@@ -53,13 +53,13 @@ test('open still rejects the bot and speakers absent from the player list', () =
 test('local commands change mode, query state and persist atomically', t => {
   const file = fileFixture(t), policy = createChatPolicy({ host: 'localhost', file });
   assert.equal(policy.handleCommand('hi Jev', context()), null);
-  assert.equal(policy.handleCommand('!jev chat nome', context()).changed, true);
+  assert.equal(policy.handleCommand('!jev chat named', context()).changed, true);
   assert.equal(policy.status(context()).mode, 'named');
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).mode, 'named');
   assert.deepEqual(fs.readdirSync(path.dirname(file)), [path.basename(file)]);
   assert.equal(createChatPolicy({ host: 'localhost', file }).accept(context()), false);
   assert.match(policy.handleCommand('!jev chat', context()).message, /named/);
-  assert.equal(policy.handleCommand('!jev chat aberto', context()).mode, 'open');
+  assert.equal(policy.handleCommand('!jev chat open', context()).mode, 'open');
   assert.equal(policy.handleCommand('!jev chat auto', context()).mode, 'auto');
   assert.equal(policy.handleCommand('!jev chat named', context()).mode, 'named');
   assert.equal(policy.handleCommand('!jev chat open', context()).mode, 'open');
@@ -67,22 +67,22 @@ test('local commands change mode, query state and persist atomically', t => {
 
 test('mutations require configured admins or the sole other player on loopback', () => {
   const local = createChatPolicy({ host: 'localhost' });
-  assert.equal(local.handleCommand('!jev chat nome', context(['Jev', 'Alex', 'Sam'])).changed, false);
+  assert.equal(local.handleCommand('!jev chat named', context(['Jev', 'Alex', 'Sam'])).changed, false);
   assert.equal(local.status(context()).mode, 'open');
   const remote = createChatPolicy({ host: 'remote.example' });
-  assert.equal(remote.handleCommand('!jev chat aberto', context()).changed, false);
+  assert.equal(remote.handleCommand('!jev chat open', context()).changed, false);
   assert.equal(remote.handleCommand('!jev chat', context()).handled, true);
   const admins = createChatPolicy({ host: 'localhost', admins: ' Sam, Admin ' });
-  assert.equal(admins.handleCommand('!jev chat nome', context()).changed, false);
-  assert.equal(admins.handleCommand('!jev chat nome', context(['Jev', 'Sam'], 'Sam')).changed, true);
+  assert.equal(admins.handleCommand('!jev chat named', context()).changed, false);
+  assert.equal(admins.handleCommand('!jev chat named', context(['Jev', 'Sam'], 'Sam')).changed, true);
   const array = createChatPolicy({ host: 'remote.example', admins: ['Alex'] });
-  assert.equal(array.handleCommand('!jev chat aberto', context()).changed, true);
+  assert.equal(array.handleCommand('!jev chat open', context()).changed, true);
 });
 
 test('commands from own bot or unknown speakers are consumed without a reply', () => {
   const policy = createChatPolicy({ host: 'localhost', admins: ['Unknown', 'Jev'] });
   for (const from of ['Unknown', 'Jev']) {
-    assert.deepEqual(policy.handleCommand('!jev chat nome', context(['Jev', 'Alex'], from)), {
+    assert.deepEqual(policy.handleCommand('!jev chat named', context(['Jev', 'Alex'], from)), {
       handled: true, changed: false, message: null, ...policy.status(context()),
     });
   }
@@ -91,7 +91,7 @@ test('commands from own bot or unknown speakers are consumed without a reply', (
 
 test('invalid commands do not change mode or persistence', t => {
   const file = fileFixture(t), policy = createChatPolicy({ host: 'localhost', file });
-  for (const text of ['!jev chat nonsense', '!jev chat open extra', '!jev chat aberto agora', '!jev chat constructor', '!jev chat __proto__']) {
+  for (const text of ['!jev chat nonsense', '!jev chat open extra', '!jev chat open agora', '!jev chat constructor', '!jev chat __proto__']) {
     assert.equal(policy.handleCommand(text, context()).changed, false);
     assert.equal(policy.status(context()).mode, 'open');
     assert.equal(fs.existsSync(file), false);
@@ -119,8 +119,21 @@ test('invalid saved state is ignored without overwriting it; failed save keeps a
   assert.equal(policy.status(context()).mode, 'open');
   fs.mkdirSync(`${file}.directory`);
   const failed = createChatPolicy({ host: 'localhost', file: `${file}.directory` });
-  const result = failed.handleCommand('!jev chat nome', context());
+  const result = failed.handleCommand('!jev chat named', context());
   assert.equal(result.changed, false);
   assert.equal(failed.status(context()).mode, 'open');
-  assert.match(result.message, /salvar/i);
+  assert.match(result.message, /save/i);
+});
+
+test('chat command names stay English while replies follow the selected language', () => {
+  const policy = createChatPolicy({ host: 'localhost' });
+  const english = context(), portuguese = { ...context(), language: 'pt-BR' };
+  assert.match(policy.handleCommand('!jev chat', english).message, /effective: open/);
+  assert.match(policy.handleCommand('!jev chat', portuguese).message, /efetivo: open/);
+  assert.match(policy.handleCommand('!jev chat named', portuguese).message, /configurado/);
+  for (const mode of ['nome', 'aberto']) {
+    const result = policy.handleCommand(`!jev chat ${mode}`, portuguese);
+    assert.equal(result.changed, false); assert.equal(result.mode, 'named'); assert.match(result.message, /open\|named\|auto/);
+  }
+  assert.match(policy.handleCommand('!jev chat open', english).message, /configured/);
 });

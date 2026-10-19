@@ -5,6 +5,8 @@ const { checkAir } = require('./vitals');
 const { regionProperties, buildFootprint, matchesOwnership } = require('./build-blocks');
 const { isDoor, isWoodenDoor } = require('./doors');
 const { thinking } = require('./speech');
+const { localize } = require('./language');
+const { shouldNarrate } = require('./communication');
 const MODEL = 'anthropic/claude-opus-5.5';
 // The generative model (OpenRouter) is for Creative play only. In Survival
 // every judgment is Jev's, so a dream run never waits on or pays for it.
@@ -274,25 +276,26 @@ async function readDesign(response, report) {
 // What Jev can honestly say about a design that is still being written. The
 // model reasons before it writes anything, so the first stretch has no content
 // to report at all and only silence to break.
-function designProgress(say, editing) {
+function designProgress(say, editing, bot = null) {
+  const report = (english, portuguese) => { if (shouldNarrate(bot, 'progress')) say(localize(bot, english, portuguese)); };
   let named = false, sized = false, drawing = false, spoke = Date.now();
   const rarely = () => Date.now() - spoke >= 45000 && (spoke = Date.now(), true);
   return text => {
-    if (!text) { if (rarely()) say('Still working it out.'); return; }
+    if (!text) { if (rarely()) report('Still working it out.', 'Ainda estou pensando no desenho.'); return; }
     // The first content ends the quiet stretch, so the drawing reports itself
     // on its own clock rather than firing the moment it begins.
     if (!drawing) { drawing = true; spoke = Date.now(); }
     if (!named) {
       const name = /"name"\s*:\s*"([^"]{1,60})"/.exec(text);
-      if (name) { named = true; say(editing ? `It'll be ${name[1]} when I'm done.` : `I'm calling it ${name[1]}.`); }
+      if (name) { named = true; report(editing ? `It'll be ${name[1]} when I'm done.` : `I'm calling it ${name[1]}.`, editing ? `Quando terminar, vai se chamar ${name[1]}.` : `Vou chamar de ${name[1]}.`); }
     }
     if (!sized) {
       const size = /"size"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]/.exec(text);
-      if (size) { sized = true; say(`It ${editing ? 'ends up' : 'comes out'} ${size[1]} by ${size[3]}, and ${size[2]} tall.`); }
+      if (size) { sized = true; report(`It ${editing ? 'ends up' : 'comes out'} ${size[1]} by ${size[3]}, and ${size[2]} tall.`, `Vai ficar com ${size[1]} por ${size[3]} blocos e ${size[2]} de altura.`); }
     }
     // Vanilla kicks a chatty client, so the drawing is reported rarely.
     const drawn = (text.match(/"block"\s*:/g) || []).length;
-    if (drawn && rarely()) say(`Still drawing: ${drawn} piece${drawn === 1 ? '' : 's'} so far.`);
+    if (drawn && rarely()) report(`Still drawing: ${drawn} piece${drawn === 1 ? '' : 's'} so far.`, `Ainda estou desenhando: ${drawn} parte${drawn === 1 ? '' : 's'} até agora.`);
   };
 }
 
@@ -328,7 +331,7 @@ async function designBuilding(bot, task, request, { fetchImpl = fetch, apiKey = 
     if (!response.ok) throw new Error(`Building designer request failed (${response.status})`);
     const { content, finishReason, usage } = await readDesign(response, designProgress(message => {
       try { bot.chat(message); } catch (_) { /* an aside is never worth failing the design over */ }
-    }, !!editing));
+    }, !!editing, bot));
     task.check();
     // Say when the answer ran out of room rather than reporting an empty one:
     // the retry can only shorten the design if it knows that is the problem.

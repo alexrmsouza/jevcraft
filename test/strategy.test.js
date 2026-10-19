@@ -17,6 +17,19 @@ function fixture(without = []) {
 }
 const picking = choice => { const asked = []; return { asked, decide: async (id, args) => { asked.push({ id, keys: Object.keys(args.tree), tree: args.tree, state: args.state }); return { path: [choice] }; } }; };
 
+test('strategy notices follow language and verbosity while preserving the selected stage', async () => {
+  for (const mode of ['off', 'important', 'full']) {
+    const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+    const said = []; bot.chat = line => said.push(line); bot._jevLanguage = 'pt-BR'; bot._jevNarration = mode;
+    const { decide } = picking('rung_diamond_sword');
+    const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
+    const result = await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => 1e12 });
+    assert.equal(result.stage.phase, 'diamond_sword');
+    if (mode === 'full') assert.match(said[0], /Espada de Diamante.*Botas de Ouro/);
+    else assert.deepEqual(said, []);
+  }
+});
+
 test('the open rungs are the ladder\'s next and each one after it that may wait; armour closes the list', () => {
   let { bot, goal } = fixture(['golden_boots', 'diamond_sword']);
   // The diamond sword is optional before the Nether (note 776): not open

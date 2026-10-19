@@ -7,6 +7,23 @@ const { resolveItem } = require('../src/catalog');
 
 const base = { addressed: { noul: 1 }, interaction: { choice: 'request' }, quantity: { choice: '1' }, delivery: { choice: 'speaker' }, outputs: { choice: 'single' }, target: { choice: 'Player' } };
 
+test('Portuguese intake clarification translates text while retaining decision options', async () => {
+  const client = { systemOne: async () => ({ answers: { ...base,
+    objective: { choice: 'come', confidence: 0.3, probabilities: { come: 0.6, follow: 0.4 } } } }) };
+  const spec = await interpret(client, 'Jev do the thing', 'Player', 'Jev', { registry, language: 'pt-BR' });
+  assert.match(spec.message, /ir até você ou seguir você/); assert.deepEqual(spec.clarification.options, ['come', 'follow']);
+  assert.equal(spec.clarification.reason, 'uncertain_objective');
+});
+
+test('Portuguese ambiguous item clarification uses translated names and canonical item options', async () => {
+  const small = { itemsArray: [{ name: 'short_grass', displayName: 'Short Grass' }, { name: 'grass_block', displayName: 'Grass Block' }], blocksByName: { short_grass: {}, grass_block: {} }, foodsByName: {} };
+  const client = { systemOne: async ({ questions }) => questions.objective ? { answers: { ...base, objective: { choice: 'obtain', confidence: 0.9 }, item: { choice: 'none', confidence: 1 } } }
+    : Object.hasOwn(questions.item.criteria, 'blocks') ? { answers: { item: { choice: 'blocks', confidence: 1 } } }
+    : { answers: { item: { choice: 'short_grass', confidence: 0.3, probabilities: { short_grass: 0.55, grass_block: 0.45 } } } } };
+  const spec = await interpret(client, 'Jev bring me grass', 'Player', 'Jev', { registry: small, language: 'pt-BR' });
+  assert.match(spec.message, /Você quis dizer/); assert(!spec.message.includes('short grass')); assert.deepEqual(spec.clarification.options, ['short_grass', 'grass_block']);
+});
+
 test('a confident word-overlap pick settles the item inside the interpretation round trip', async () => {
   let calls = 0;
   const client = { systemOne: async ({ questions }) => {

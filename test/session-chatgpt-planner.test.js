@@ -6,14 +6,16 @@ const { EventEmitter } = require('node:events');
 const { Vec3 } = require('vec3');
 const { createPlanner } = require('../src/planner');
 
-async function fixture(t, { planner, saved, legacy, initialPaused = true, reactive, host = 'test', chatMode, chatAdmins } = {}) {
-  for (const [key, value] of [['JEV_CHAT_MODE', chatMode], ['JEV_CHAT_ADMINS', chatAdmins]]) {
+async function fixture(t, { planner, saved, legacy, initialPaused = true, reactive, host = 'test', chatMode, chatAdmins, language, narration, communication } = {}) {
+  for (const [key, value] of [['JEV_CHAT_MODE', chatMode], ['JEV_CHAT_ADMINS', chatAdmins], ['JEV_LANGUAGE', language], ['JEV_NARRATION', narration]]) {
     const previous = process.env[key];
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
     t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
   }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-planner-session-'));
   const file = path.join(directory, `${host}-1-Jev.json`), said = [], launches = [], scans = [], pluginWaitFlags = [];
+  const communicationFile = path.join(directory, `${host}-1-Jev-communication.json`);
+  if (communication) fs.writeFileSync(communicationFile, JSON.stringify(communication));
   if (saved) fs.writeFileSync(file, JSON.stringify({ version: 1, from: 'Alex', request: 'previous work', createdAt: new Date().toISOString(), ...saved }));
   const bot = Object.assign(new EventEmitter(), {
     username: 'Jev', version: '26.1', isAlive: true, health: 20, food: 20, oxygenLevel: 20,
@@ -51,7 +53,7 @@ async function fixture(t, { planner, saved, legacy, initialPaused = true, reacti
   bot.emit('spawn');
   await settle();
   return { bot, said, launches, scans, errors, session, survival, idleCalls, joinReads, pluginWaitFlags,
-    policyFile: path.join(directory, `${host}-1-Jev-chat-policy.json`),
+    policyFile: path.join(directory, `${host}-1-Jev-chat-policy.json`), communicationFile,
     finish: error => completions.at(-1)(error),
     send: (message, sender = 'alex') => bot._client.emit('playerChat', { sender, plainMessage: message }), read: () => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : null };
 }
@@ -308,11 +310,11 @@ test('local chat policy commands bypass the planner, persist changes and preserv
   const { planner, calls } = plannerFixture(); const f = await fixture(t, { planner, host: 'localhost', chatAdmins: 'Alex' });
   const before = f.said.length; f.send('!jev chat'); await settle();
   assert(f.said.length > before); assert.equal(calls.length, 0);
-  f.send('!jev chat nome'); await settle(); assert.equal(calls.length, 0);
+  f.send('!jev chat named'); await settle(); assert.equal(calls.length, 0);
   assert.equal(JSON.parse(fs.readFileSync(f.policyFile, 'utf8')).mode, 'named');
   f.send('colete troncos'); await settle(); assert.equal(calls.length, 0);
   f.send('Jev colete troncos'); await settle(); assert.equal(f.launches.length, 1);
-  const active = f.launches[0]; f.send('!jev chat aberto'); await settle();
+  const active = f.launches[0]; f.send('!jev chat open'); await settle();
   assert.equal(calls.length, 1); assert.equal(f.launches.length, 1); assert.equal(active.status, 'pending');
 });
 
@@ -328,4 +330,78 @@ test('open chat still ignores the bot own player packets and protects bare stop 
 test('legacy mode keeps named intake even with an open chat policy environment', async t => {
   let calls = 0; const f = await fixture(t, { host: 'localhost', chatMode: 'open', legacy: async () => { calls++; return { kind: 'other' }; } });
   f.send('hello'); await settle(); assert.equal(calls, 0); assert.equal(fs.existsSync(f.policyFile), false);
+});
+
+for (const provider of ['planner', 'legacy']) test(`local communication commands bypass ${provider} and keep active work`, async t => {
+  let calls = 0; const interpret = async () => { calls++; throw Error('No model for local configuration'); };
+  const f = await fixture(t, { host: 'localhost', chatAdmins: 'Alex', saved: { kind: 'obtain', item: 'oak_log', count: 1, status: 'cancelled' },
+    ...(provider === 'planner' ? { planner: { interpret } } : { legacy: interpret }) });
+  f.send('Jev resume'); await settle(); const active = f.launches[0]; assert(active);
+  const epoch = f.bot._requestActivityEpoch;
+  for (const command of ['!jev language pt-BR', '!jev narration off', '!jev language', '!jev narration']) f.send(command);
+  await settle();
+  assert.equal(calls, 0); assert.equal(f.launches.length, 1); assert.equal(active.status, 'cancelled');
+  assert.equal(f.bot._requestActivityEpoch, epoch); assert.equal(f.bot._jevLanguage, 'pt-BR'); assert.equal(f.bot._jevNarration, 'off');
+  assert.deepEqual(JSON.parse(fs.readFileSync(f.communicationFile, 'utf8')), { version: 1, language: 'pt-BR', narration: 'off' });
+  assert(f.said.some(line => /Idioma.*pt-BR/i.test(line))); assert(f.said.some(line => /Narração.*off/i.test(line)));
+});
+
+test('persisted communication settings override environment defaults on reconnect', async t => {
+  const f = await fixture(t, { planner: { interpret: async () => {} }, language: 'en-US', narration: 'full', communication: { language: 'pt-BR', narration: 'off' } });
+  assert.equal(f.bot._jevLanguage, 'pt-BR'); assert.equal(f.bot._jevNarration, 'off'); assert.deepEqual(f.said, []);
+});
+
+test('selected communication language reaches the planner and follows live language changes', async t => {
+  const { planner, calls } = plannerFixture(); const f = await fixture(t, { planner, language: 'pt-BR', chatAdmins: 'Alex' });
+  f.send('Jev colete troncos'); await settle(); assert.equal(JSON.parse(calls[0].input).language, 'pt-BR');
+  f.send('!jev language en-US'); f.send('Jev collect logs'); await settle(); assert.equal(JSON.parse(calls[1].input).language, 'en-US');
+});
+
+test('narration off suppresses unsolicited startup and async errors but keeps direct localized status and stop replies', async t => {
+  const { planner } = plannerFixture(); const f = await fixture(t, { planner, language: 'pt-BR', narration: 'off' });
+  assert.deepEqual(f.said, []); f.send('Jev colete troncos'); await settle(); const before = f.said.length;
+  f.finish(Object.assign(Error('No route from here'), { name: 'NoRoute' })); await settle(); assert.equal(f.said.length, before);
+  f.send('Jev status'); f.send('Jev stop'); await settle();
+  assert(f.said.some(line => /Parei a tarefa/.test(line))); assert(f.said.length >= before + 2);
+});
+
+test('important narration suppresses startup progress but permits localized async failures', async t => {
+  const { planner } = plannerFixture(); const f = await fixture(t, { planner, language: 'pt-BR', narration: 'important' });
+  assert.deepEqual(f.said, []); f.send('Jev colete troncos'); await settle(); const before = f.said.length;
+  f.finish(Object.assign(Error('No route from here'), { name: 'NoRoute' })); await settle(); assert(f.said.length > before);
+  assert(!f.said.at(-1).includes('could not'));
+});
+
+test('communication mutation permission failures stay local and leave settings and work unchanged', async t => {
+  const { planner, calls } = plannerFixture(); const f = await fixture(t, { planner, language: 'en-US', chatAdmins: 'Alex' });
+  f.send('!jev language pt-BR', 'other'); f.send('!jev narration off', 'other'); await settle();
+  assert.equal(calls.length, 0); assert.equal(f.bot._jevLanguage, 'en-US'); assert.equal(f.bot._jevNarration, 'full');
+  assert(f.said.some(line => /permission|cannot change/i.test(line)));
+});
+
+test('Portuguese legacy task acknowledgements and dream queries use the selected language', async t => {
+  let calls = 0;
+  const legacy = async (client, request, from) => calls++ ? { kind: 'dream', dream: { operation: 'query' } }
+    : { kind: 'obtain', request, from, item: 'diamond_sword', count: 1, deliver: false };
+  const f = await fixture(t, { legacy, language: 'pt-BR' });
+  f.send('Jev consiga uma espada'); await settle(); assert(f.said.some(line => /Vou conseguir 1 Espada de Diamante/.test(line)));
+  f.send('Jev qual seu sonho'); await settle(); assert(f.said.some(line => /Ainda não tenho um sonho/.test(line)));
+});
+
+const suspendedBuild = () => ({ kind: 'obtain', item: 'oak_log', count: 1, status: 'complete', suspendedTasks: [
+  { kind: 'build', request: 'build the earlier tower', from: 'Alex', status: 'blocked', waitingOn: { x: 5, y: 64, z: 3, name: 'bedrock', dimension: 'overworld' } },
+] });
+for (const narration of ['off', 'important', 'full']) test(`automatic resume of older suspended work honors ${narration} narration`, async t => {
+  const f = await fixture(t, { saved: suspendedBuild(), language: 'pt-BR', narration }); const before = f.said.length;
+  await new Promise(resolve => setTimeout(resolve, 550));
+  assert.equal(f.launches.length, 1); assert.equal(f.launches[0].request, 'build the earlier tower');
+  const automatic = f.said.slice(before);
+  if (narration === 'off') assert.deepEqual(automatic, []);
+  else { assert.equal(automatic.length, 2); assert.match(automatic[0], /saiu do caminho/); assert.match(automatic[1], /Voltando à sua tarefa anterior/); }
+});
+
+test('explicit resume of older suspended work remains a direct reply with narration off', async t => {
+  const f = await fixture(t, { saved: suspendedBuild(), language: 'pt-BR', narration: 'off' });
+  f.send('Jev resume'); await settle(); assert.equal(f.launches.length, 1);
+  assert(f.said.some(line => /Voltando à sua tarefa anterior/.test(line)));
 });

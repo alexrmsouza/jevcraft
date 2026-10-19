@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // The pearls beside the rods, in the Nether (note 788). The ladder took the
 // rods first by rule and the pearls only once seven rods were carried or
 // the rods rested (game-progress.js nextGameStage). In the trials of
@@ -228,7 +229,8 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   const pick = decision.path.at(-1);
   const at = Date.now();
   goal.pearlOrder = { pick, at, until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null };
-  if (KIND[pick]) bot.chat?.(({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.' })[pick]);
+  if (KIND[pick]) notify(bot, ({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.' })[pick],
+    ({ hunt_enderman: 'Tem um enderman ao alcance. Vou buscar a pérola dele primeiro e as varas depois.', warped_forest: 'Vou à floresta distorcida buscar pérolas e depois as varas.', barter_gold: 'Vou trocar ouro por pérolas e depois buscar as varas.' })[pick]);
   save();
   return pick;
 }

@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { formatItems } = require('./language');
 // Back for what a death dropped, as a player goes. With the kit restore off
 // (2026-09-23), every death cost the iron kit, the sword, the rods and the
 // pearls: the survival layer's own pickup only looks within 128 blocks of
@@ -213,7 +215,7 @@ function tripCameToNothing(bot, goal, run, save, now = Date.now()) {
   const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
   if (worn.length >= 2) return false;
   goal.errand = { dimension: 'overworld', items: [], for: 'a kit made again: what the death dropped was not got back', at: now };
-  bot.chat?.('Nothing of my kit to be had here, and next to nothing on me: back out to make one.');
+  notify(bot, 'Nothing of my kit to be had here, and next to nothing on me: back out to make one.', 'Não recuperei meu equipamento e estou quase sem nada. Vou voltar para preparar outro conjunto.', 'important');
   save?.();
   return true;
 }
@@ -284,7 +286,7 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   // Chosen here, it is not asked again on the far side.
   run.choice = 'go_back'; run.told = TOLD;
   goal.errand = { dimension: 'nether', items: [], for: KIT_ERRAND, at: now };
-  bot.chat?.(`Straight back through the portal for what I dropped: ${listed(run.items)}.`);
+  notify(bot, `Straight back through the portal for what I dropped: ${listed(run.items)}.`, `Vou voltar pelo portal para buscar o que perdi: ${formatItems(run.items, bot)}.`, 'important');
   save();
   return true;
 }
@@ -412,7 +414,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       goal.netherShortcut = { chest: { x: Math.round(spot.x), y: Math.round(spot.y), z: Math.round(spot.z) }, phase: 'out', at: Date.now(), for: 'corpse_run' };
       goal.errand = { dimension: 'nether', items: [], for: ns.ERRAND, at: Date.now() };
       run.choice = 'through_nether'; save();
-      bot.chat?.(`Through the Nether for them: ${Math.round(far / 8)} blocks there in place of ${far} here.`);
+      notify(bot, `Through the Nether for them: ${Math.round(far / 8)} blocks there in place of ${far} here.`, `Vou pelo Nether para buscar os itens: ${Math.round(far / 8)} blocos por lá, em vez de ${far} por aqui.`, 'important');
       return false;
     }
     if (decision.path.at(-1) !== 'food_first') run.choice = decision.path.at(-1); save();
@@ -431,7 +433,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   }
   if (!run.announced) {
     run.announced = true;
-    bot.chat?.(`Going back for what I dropped when I died, ${Math.round(flat(bot.entity.position, spot))} blocks off: ${listed(run.items)}.`);
+    notify(bot, `Going back for what I dropped when I died, ${Math.round(flat(bot.entity.position, spot))} blocks off: ${listed(run.items)}.`, `Vou buscar os itens que perdi ao morrer, a ${Math.round(flat(bot.entity.position, spot))} blocos daqui: ${formatItems(run.items, bot)}.`, 'important');
   }
   goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items } }; save();
   const before = flat(bot.entity.position, spot);
@@ -548,15 +550,15 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   }
   run.passes++;
   if (got) await wearRecovered(bot);
-  if (!Object.keys(run.items).length) { run.status = 'done'; bot.chat?.('Got my things back.'); }
+  if (!Object.keys(run.items).length) { run.status = 'done'; notify(bot, 'Got my things back.', 'Recuperei meus itens.', 'important'); }
   // Not closed while something on the list is still seen lying there and
   // the game's five minutes are not out: the next pass is for it.
   else if (Object.keys(run.items).some(name => lying(bot, spot, name).length) && run.passes < 8) {
-    if (full) bot.chat?.('My pockets are full and my things are still lying here. Making room.');
+    if (full) notify(bot, 'My pockets are full and my things are still lying here. Making room.', 'Meu inventário está cheio e meus itens ainda estão aqui. Vou abrir espaço.', 'important');
   }
   else if (!got || run.passes >= 2) {
     run.status = got ? 'partial' : 'gone';
-    bot.chat?.(got ? `Got some of it back. The rest is gone: ${listed(run.items)}.` : `Nothing left where I died. Lava or time took it.`);
+    notify(bot, got ? `Got some of it back. The rest is gone: ${listed(run.items)}.` : `Nothing left where I died. Lava or time took it.`, got ? `Recuperei uma parte. Os itens restantes desapareceram: ${formatItems(run.items, bot)}.` : 'Não sobrou nada onde morri. Os itens desapareceram com o tempo ou queimaram na lava.', 'important');
     tripCameToNothing(bot, goal, run, save);
   }
   save();

@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { formatItems } = require('./language');
 // Banking rods (note 760): out through the portal with the rods already got,
 // into a chest on the Overworld side, and back in for the rest. No bot
 // carried a rod out of the Nether from 2026-09-29T23:00Z to 2026-09-30T17:00Z
@@ -122,7 +124,8 @@ function option(bot, task, goal, save, actions, offer) {
       // began and the bot went on into the fortress (note 887).
       require('./progress').attemptsFor(goal).clear('rung', 'bank_rods');
       save?.();
-      bot.chat?.(`Taking the ${plural(offer.rods, 'blaze rod')} out to a chest past the portal, ${offer.complete ? 'every rod I need is had with them: the pearls after' : 'then back for the rest'}.`);
+      notify(bot, `Taking the ${plural(offer.rods, 'blaze rod')} out to a chest past the portal, ${offer.complete ? 'every rod I need is had with them: the pearls after' : 'then back for the rest'}.`,
+        `Vou levar ${formatItems({ blaze_rod: offer.rods }, bot)} para um baú do outro lado do portal. ${offer.complete ? 'Com elas já tenho todas as varas necessárias. Depois busco as pérolas.' : 'Depois volto para buscar o restante.'}`);
       if (actions?.returnOverworld) await actions.returnOverworld(bot, task, goal, save);
     } };
 }
@@ -171,7 +174,8 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
   if (!n || (!n.rodsLeft && !(n.pearlsLeft > 0))) return false;
   goal.rodBank = { at: now, rods, ...(pearls ? { pearls } : {}), from: P(bot.entity.position), chest: chestThere(bot, goal).how, onArrival: true };
   setAside(goal, 'rod_bank', 'arrival', 'banked on coming out with rods', 30 * 60000);
-  bot.chat?.(`Out with ${[rods >= 1 ? plural(rods, 'blaze rod') : null, pearls ? plural(pearls, 'ender pearl') : null].filter(Boolean).join(' and ')}: into a chest here first, ${n.rodsLeft ? `${n.rodsLeft} more to get` : `${plural(n.pearlsLeft, 'pearl')} still to get`}.`);
+  notify(bot, `Out with ${[rods >= 1 ? plural(rods, 'blaze rod') : null, pearls ? plural(pearls, 'ender pearl') : null].filter(Boolean).join(' and ')}: into a chest here first, ${n.rodsLeft ? `${n.rodsLeft} more to get` : `${plural(n.pearlsLeft, 'pearl')} still to get`}.`,
+    `Saí com ${formatItems({ blaze_rod: rods, ender_pearl: pearls }, bot)}. Vou guardar no baú primeiro. ${n.rodsLeft ? `Ainda faltam ${n.rodsLeft} varas de blaze.` : `Ainda faltam ${n.pearlsLeft} pérolas de ender.`}`, 'important');
   return true;
 }
 
@@ -351,7 +355,8 @@ async function bank(bot, task, goal, save, actions = {}) {
     offer = { site, making, what, rods };
   }
   const stored = await rs().stashRods(bot, task, goal, save, actions, offer, { step: 'bank_rods', rest: ['rod_bank', 'store'],
-    chat: (list, place) => `Banked ${list} in a chest at ${place}. Back to the Nether for the rest.` });
+    chat: (list, place) => `Banked ${list} in a chest at ${place}. Back to the Nether for the rest.`,
+    chatPortuguese: (list, place) => `Guardei ${list} em um baú em ${place}. Vou voltar ao Nether para buscar o restante.` });
   // Stored: the next coming out with rods banks again at once. The half
   // hour's rest (bankOnArrival) is for a bank that failed; kept after one
   // that stored, 25597 came out again fourteen minutes later with two rods

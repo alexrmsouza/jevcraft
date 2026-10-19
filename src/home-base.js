@@ -8,6 +8,8 @@ const { checkThreats } = require('./danger');
 const { countOf } = require('./skills');
 const { DAY } = require('./day');
 const stash = require('./home-stash');
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 const { knownVillages, BED_REACH } = require('./villages');
 
 // A home base: one spot per world, on level ground beside water, with a
@@ -1011,45 +1013,49 @@ async function searchForSheep(bot, task, goal, save, actions) {
     pick = decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   if (pick === 'cut_cobwebs') {
-    bot.chat?.("Cobwebs! Each one's a string, and string makes wool.");
+    notify(bot, "Cobwebs! Each one's a string, and string makes wool.", 'Teias! Cada uma dá uma linha, e linha vira lã.');
     await cutCobwebs(bot, task, goal, save, actions, webs, stringWanted);
     return;
   }
   if (pick === 'craft_from_string') {
-    bot.chat?.(`Making wool from string.`);
+    notify(bot, `Making wool from string.`, 'Fazendo lã com linha.');
     await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
     return;
   }
   if (pick === 'without_bed') {
     setAside(goal, 'bed_search', 'wool', 'gone on without the bed for now (Jev chose without_bed)', 30 * 60000); save();
-    bot.chat?.('No bed for now. On with the rest.');
+    notify(bot, 'No bed for now. On with the rest.', 'Sem cama por enquanto. Vou continuar com o resto.', 'important');
     return;
   }
   if (pick === 'until_day') {
     const ms = Math.max(60000, Math.round(((DAY.DAWN - tod + 24000) % 24000) * 50));
     setAside(goal, 'bed_search', 'wool', 'left for the night: sheep are looked for by day (Jev chose until_day)', ms); save();
-    bot.chat?.('The sheep can wait till morning.');
+    notify(bot, 'The sheep can wait till morning.', 'As ovelhas podem esperar até de manhã.');
     return;
   }
   const way = ways[pick] || {};
   if (way.far !== undefined) {
     (search.farWays ||= {})[way.far] = (search.farWays[way.far] || 0) + 1;
     search.toward = { ...farPoint(bot, way.far), far: way.far, legs: 1 }; save();
-    bot.chat?.(`No sheep about here. Walking far ${exploration.HEADINGS[way.far]} to look.`);
+    notify(bot, `No sheep about here. Walking far ${exploration.HEADINGS[way.far]} to look.`, `Não há ovelhas por aqui. Vou procurar mais longe, na direção ${portugueseDirection(exploration.HEADINGS[way.far])}.`);
     return;
   }
   const flock = way.flock;
   if (flock) {
     search.toward = { x: flock.x, y: flock.y, z: flock.z, seen: true }; save();
-    bot.chat?.(`Back to the sheep I saw ${flock.distance} blocks ${flock.direction}.`);
+    notify(bot, `Back to the sheep I saw ${flock.distance} blocks ${flock.direction}.`, `Voltando às ovelhas que vi a ${flock.distance} blocos, na direção ${portugueseDirection(flock.direction)}.`);
     return;
   }
   const chosen = way.biome;
   // explore_here, or the climb (explore's own surface trip comes first when
   // the bot is below the surface, work.js explore).
-  if (!chosen) { if (pick === 'climb_first') bot.chat?.('No sheep down here. Climbing to the surface to look.'); await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  if (!chosen) { if (pick === 'climb_first') notify(bot, 'No sheep down here. Climbing to the surface to look.', 'Não há ovelhas aqui embaixo. Vou subir à superfície para procurar.'); await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   search.toward = { x: chosen.x, z: chosen.z, biome: chosen.biome }; save();
-  bot.chat?.(`No sheep here. Trying the ${chosen.biome.replaceAll('_', ' ')} to the ${chosen.direction}.`);
+  notify(bot, `No sheep here. Trying the ${chosen.biome.replaceAll('_', ' ')} to the ${chosen.direction}.`, `Não há ovelhas aqui. Vou procurar em ${displayName(chosen.biome, bot)}, na direção ${portugueseDirection(chosen.direction)}.`);
+}
+
+function portugueseDirection(direction) {
+  return ({ north: 'norte', south: 'sul', east: 'leste', west: 'oeste', northeast: 'nordeste', northwest: 'noroeste', southeast: 'sudeste', southwest: 'sudoeste', here: 'daqui' })[String(direction).replaceAll('-', '')] || direction;
 }
 
 // Nearest cobweb first, cut with the sword (the best tool for it), and the
