@@ -21,6 +21,13 @@ npm test               # no network, no server
 
 Node 22 or newer. `npm test` runs about two thousand tests in about a minute and needs no key.
 
+On Windows, use native Node.js 22 or newer from PowerShell or Command Prompt.
+In PowerShell, copy the environment template with `Copy-Item .env.example .env`.
+`npm test` needs no Bash or `nice`; extra Node test options work as usual, for
+example `npm test -- --test-name-pattern="selected test"`. Keep the LF line
+endings configured in `.gitattributes`: generated docs and source-inspection
+tests compare exact text.
+
 ## Kinds of change, and what to include
 
 **A gameplay fix.** Start from a concrete failure: the chat request, what happened, what should have happened. Reproduce it in a unit test with a mocked bot where you can (see `test/` for the fixtures), or in one of the controlled world scripts under `scripts/` when it needs a real server. Say in the pull request which you did and what you ran.

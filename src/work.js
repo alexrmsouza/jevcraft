@@ -92,7 +92,7 @@ function noteError(goal, err) {
   // answer it ended and not on one given before it (tried.js ownFailure).
   const by = require('./tried').answerNow(goal);
   goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now(), ...(by ? { by } : {}) };
-  const frames = String(err.stack || '').split('\n').filter(line => /\/src\//.test(line)).map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(src/'));
+  const frames = String(err.stack || '').split('\n').map(line => line.replace(/\\/g, '/')).filter(line => /\/src\//.test(line)).map(line => line.trim().replace(/^at /, '').replace(/\(?(?:[A-Za-z]:)?\/.*\/src\//, '(src/'));
   // Where a failure came from, past the shared primitives: "navigation
   // ended" five times over said nothing about which walk it was.
   goal.lastErrorFrom = frames.filter(f => !/src\/(skills|motion)\.js/.test(f)).slice(0, 2).join(' < ') || undefined;

@@ -524,7 +524,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   const dragons = Object.values(bot.entities).filter(e => live(bot, e) && e.name === 'ender_dragon');
   if (dragons.length > 1) { policy.restore(); throw blocked('More than one observed dragon; target is ambiguous'); }
   const dragon = dragons[0], beforeDragon = dragon && metadata(bot, dragon, 'health');
-  let progress = false, chose = false, breathWatch = null;
+  let progress = false, chose = false, breathWatch = null, underHeadTimer = null;
   const motion = new Map();
   const moved = entity => {
     if (entity !== dragon) return;
@@ -2727,7 +2727,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           ...(drillSays(bot) ? { drill: drillSays(bot) } : {}) },
         run: async () => {
           const tally = state.underHead ||= { tries: 0, reached: 0, struck: 0, lost: 0 }; tally.tries++; const healthAtStart = bot.health;
-          bot._underHeadRun = true; setTimeout(() => { bot._underHeadRun = false; }, 60000);
+          bot._underHeadRun = true; underHeadTimer = setTimeout(() => { bot._underHeadRun = false; }, 60000);
           const reached = () => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !h || canStrike(bot, h); };
           // The run stopped for a mob within four, not for the dragon itself (note 1612): the dragon counts among the hostiles, and the run to the ground under its head passes within four of its body on the way, so the run ended there, beside the body and eight from the head, 'out of the sword's reach', and the take-off's throw followed (25588, dragon-151, 2026-10-14 09:14Z, the body at (-4, 63, 1), the dragon at (-1, 65, 0), the head at (3, 64, 5); dead at 14.6 health 50 blocks off).
           // To the front of the head first (note 1617), unless the body is there already.
@@ -4296,6 +4296,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     state.lastInterrupted = { at: Date.now(), reason: err.message }; save();
     await respond();
   } finally {
+    if (underHeadTimer) { clearTimeout(underHeadTimer); bot._underHeadRun = false; }
     const after = dragon && metadata(bot, dragon, 'health');
     if (Number.isFinite(after) && after < beforeDragon) { state.lastDamage = { at: Date.now(), before: beforeDragon, after }; progress = true; bot.emit('end_combat', { damage: state.lastDamage }); }
     const cell = `${Math.floor(bot.entity.position.x / 4)},${Math.floor(bot.entity.position.z / 4)}`;
