@@ -4,6 +4,7 @@ async function configuredPlanner({ env = process.env, signal, auth, createClient
   const provider = env.JEV_PLANNER || 'jev';
   if (provider === 'jev') return { provider, planner: null };
   if (provider !== 'chatgpt') throw new Error('JEV_PLANNER must be jev or chatgpt.');
+  require('./chat-policy').createChatPolicy({ host: env.MC_HOST || 'localhost', mode: env.JEV_CHAT_MODE });
   const timeoutMs = Number(env.CHATGPT_TIMEOUT_MS || 45000);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) throw new Error('CHATGPT_TIMEOUT_MS must be an integer between 1 and 300000.');
   auth ||= require('./chatgpt-auth');

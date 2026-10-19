@@ -35,3 +35,8 @@ test('authentication errors stop startup without falling back to Jev intake', as
   const failure = Error('Sign in first');
   await assert.rejects(configuredPlanner({ env: { JEV_PLANNER: 'chatgpt' }, auth: { getAccessToken: async () => { throw failure; } }, createClient: () => { throw Error('Unexpected catalog'); } }), error => error === failure);
 });
+
+test('invalid chat mode fails before authentication or connecting Minecraft', async () => {
+  await assert.rejects(configuredPlanner({ env: { JEV_PLANNER: 'chatgpt', JEV_CHAT_MODE: 'typo' },
+    auth: { getAccessToken: () => { throw Error('Unexpected authentication'); } } }), /JEV_CHAT_MODE/);
+});

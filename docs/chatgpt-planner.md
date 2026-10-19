@@ -45,8 +45,13 @@ CHATGPT_MODEL=gpt-6-luna
 
 Keep `TYPESAFE_API_KEY` or the existing OpenRouter Jev configuration available.
 Set `MC_HOST` and `MC_PORT` to your server, then run `npm start`. Startup checks
-ChatGPT access and model availability before connecting to Minecraft; it does
-not make an inference request until a player sends a request.
+ChatGPT access and model availability before connecting to Minecraft. In
+ChatGPT mode the bot waits for a player request, including after reconnecting
+or finishing work. It does not start collecting supplies, exploring, crafting
+or pursuing dreams while waiting. It can react to an actual threat or physical
+danger, then return to waiting. Quiet waiting makes no model inference calls;
+reactive defense can use Jev/TypeSafe. The OpenAI planner handles player
+requests only. Chat, clarification and status do not start an autonomous task.
 
 Try `Jev colete 16 troncos de carvalho` or `Jev faça 8 gravetos para mim`.
 This first version supports one obtain/craft goal at a time, conversation and
@@ -56,6 +61,42 @@ Literal operator commands retain the existing authorization checks.
 `Jev pare`, `Jev retome` and `Jev status` use local controls. A stop cancels
 pending planning so a late model response cannot restart work. English controls
 remain available. Use `JEV_PLANNER=jev` to restore the original interpreter.
+That original mode also retains JevCraft's autonomous work between requests.
+
+## Chat addressing
+
+On a loopback server (`localhost`, `127.0.0.1` or `::1`), the ChatGPT planner
+listens to player chat without requiring the bot's name. Other servers default
+to automatic addressing. Three modes are available:
+
+| Mode | Behavior |
+| --- | --- |
+| `open` | Respond to player chat without a name prefix. |
+| `named` | Require the bot's name for ordinary requests. |
+| `auto` | Open with one other connected player; named with two or more. |
+
+The count excludes Jev and uses the server's connected-player list, including
+players outside its current view. The bot always ignores its own chat.
+
+Use ordinary chat messages, not Minecraft slash commands:
+
+```text
+!jev chat
+!jev chat aberto
+!jev chat nome
+!jev chat auto
+```
+
+These controls run locally and preserve the task in progress. Changes survive
+restarts in the ignored local state directory. `JEV_CHAT_ADMINS` lists the player
+names allowed to change modes; when empty, a sole other player on a loopback
+server may change them. These permissions are separate from operator commands.
+
+An explicit `JEV_CHAT_MODE=open|named|auto` in the environment fixes the mode and
+overrides saved chat settings. Leave it unset to allow persistent chat changes.
+Open mode sends ordinary player messages to the planner, so it can use more
+ChatGPT plan allowance than named mode. Clarification and local task controls
+retain their existing handling.
 
 Only the request and a compact game snapshot go to the planner: the player and
 bot names, inventory, observed nearby block names, game mode, dimension and

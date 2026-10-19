@@ -28,6 +28,8 @@ const { CompanionMemory, position } = require('./memory');
 const { BuildRegistry, resolveBuildContinuation } = require('./builds');
 const { nextDreamRequest, shouldLaunchDream, DREAMS, FAILED_LAUNCH_MS, dreamTitle, dreamReport, noteCustomAttempt, customVerdict } = require('./dream');
 const { immediateThreat } = require('./danger');
+const { createReactiveWait } = require('./reactive-wait');
+const { createChatPolicy } = require('./chat-policy');
 const { Ledger, withRun, appendSummary } = require('./ledger');
 
 // The planner's verdict on a request, before any work starts: an error
@@ -53,6 +55,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const connectedAt = Date.now();
   const closed = new Promise(resolve => { resolveClosed = resolve; });
   const bot = mineflayer.createBot({ ...config, respawn: false });
+  function setWaitingForRequest(waiting) {
+    bot._waitingForRequest = waiting;
+    if (planner) bot._requestActivityEpoch = (bot._requestActivityEpoch || 0) + 1;
+  }
+  setWaitingForRequest(Boolean(planner));
   global.__jevBot = bot;
   // The damage types by index, from the registry the server sends before
   // login, for the flight record's damage frames (recorder/observer.js).
@@ -148,6 +155,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // A new build is taken at a quiet moment (quiet-restart.js).
   if (!process.env.JEV_NO_QUIET_RESTART) bot.once('spawn', () => require('./quiet-restart').watchRestartRequest(bot, path.join(stateDirectory, 'restart-requested'), { startedAt: connectedAt, port: config.port }));
   const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const chatPolicy = planner ? createChatPolicy({ host: config.host,
+    file: path.join(stateDirectory, `${identity}-chat-policy.json`),
+    mode: process.env.JEV_CHAT_MODE, admins: process.env.JEV_CHAT_ADMINS }) : null;
   const commandLog = path.join(stateDirectory, `${identity}-commands.jsonl`);
   bot._client.on('declare_commands', tree => {
     if (ended) return;
@@ -216,6 +226,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   const survival = createSurvival(bot, { state: survivalStore.read() || (memoryIdentity === identity ? store.read()?.survival : undefined), client: routed });
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
+  if (planner) { survival.state.paused = true; saveSurvival(); }
   const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); world.harvest(goal); store.save(goal); } };
   const workStore = { save: goal => { saveGoal(goal); saveSurvival(); } };
   let active = null;
@@ -226,20 +237,25 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   let requestController = new AbortController();
   function invalidateRequests() {
     generation++;
+    if (planner) bot._requestActivityEpoch++;
     requestController.abort(new Error('Player request interrupted'));
     requestController = new AbortController();
   }
   let ready = false;
   let pendingRequests = 0;
   let observation;
+  const reactiveWait = planner ? createReactiveWait({ bot, survival, save: saveSurvival,
+    isReady: () => ready && !ended, isBusy: () => Boolean(active) || relaunching }) : null;
 
   async function stop(status = 'cancelled') {
+    if (planner && status === 'cancelled') setWaitingForRequest(true);
     if (status === 'cancelled') { survival.state.paused = true; saveSurvival(); }
     if (!active) {
       if (status === 'cancelled') {
         const saved = store.read();
         if (saved && ['pending', 'running', 'recovering'].includes(saved.status)) { saved.status = 'cancelled'; saveGoal(saved); }
       }
+      await reactiveWait?.cancel();
       return;
     }
     active.task.cancel();
@@ -252,6 +268,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   }
 
   function launch(goal) {
+    setWaitingForRequest(false);
     world.hydrate(goal);
     memory.bind(goal);
     goal.memoryContext = memory.context(goal.from);
@@ -291,10 +308,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         console.error(err); bot.chat(`${friendlyProblem(err)} ${recoveryHint(err)}`);
       }
     }).finally(() => {
-      if (active === session) active = null;
+      if (active === session) {
+        active = null;
+        if (planner && !session.relaunch) { setWaitingForRequest(true); survival.state.paused = true; saveSurvival(); }
+      }
       if (session.relaunch) {
         relaunching = true;
-        setTimeout(() => { relaunching = false; if (!ended && !active) launch(goal); }, 1500);
+        const revision = generation;
+        setTimeout(() => { relaunching = false; if (!ended && !active && (!planner || revision === generation)) launch(goal); }, 1500);
         return;
       }
       if (!goal.dream && ['complete', 'blocked'].includes(goal.status)) ledger.close(goal.ledgerRun, goal.status);
@@ -417,6 +438,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   }
 
   async function resume(revision = generation, options) {
+    await reactiveWait?.cancel();
     if (active?.idle) await stop('interrupted');
     // The dream is what the bot does with nobody's work waiting. A player's
     // stopped or replaced request under it comes first; the dream picks up
@@ -429,8 +451,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (active) { bot.chat('Already working on the saved task.'); return; }
     const current = store.read(), saved = resumeSaved(current, options);
     if (!saved || saved.status === 'complete') {
-      survival.state.paused = false; delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
-      bot.chat("I'm back! I'll look after myself while I wait for your next task."); return;
+      setWaitingForRequest(Boolean(planner));
+      survival.state.paused = Boolean(planner); delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
+      bot.chat(planner ? 'Aguardando seu próximo pedido. Continuo atento a perigos.' : "I'm back! I'll look after myself while I wait for your next task."); return;
     }
     delete saved.waitingOn;
     if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
@@ -451,6 +474,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // again by itself once that block is gone (siteChanged in work.js).
   let waitCheckedAt = 0;
   const idleTimer = setInterval(() => {
+    if (planner) {
+      reactiveWait.tick().catch(error => console.error('[reactive wait]', error.name));
+      return;
+    }
     const now = Date.now();
     if (ready && !pendingRequests && !launchingDream && (!active || active.idle) && now - waitCheckedAt > 5000) {
       waitCheckedAt = now;
@@ -470,6 +497,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (!player || player.username === bot.username || typeof data.plainMessage !== 'string') return;
     const from = player.username;
     let request = data.plainMessage;
+    const chatCommand = chatPolicy?.handleCommand(request, { from, username: bot.username, players: bot.players });
+    if (chatCommand?.handled) { if (chatCommand.message) bot.chat(chatCommand.message); return; }
     let literal;
     try { literal = requestedCommand(request, bot.username); }
     catch (err) { console.error(err); bot.chat('I could not use that command. Please check what you asked me to do.'); return; }
@@ -492,7 +521,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       request = `${bot.username} ${answer}`;
       address = parseAddress(request, bot.username);
     }
-    if (!address.explicit && !control.test(address.text)) return;
+    const chatAccepted = chatPolicy ? chatPolicy.accept({ from, username: bot.username, players: bot.players,
+      addressed: address.explicit, control: control.test(address.text), clarification: Boolean(answer) })
+      : address.explicit || control.test(address.text);
+    if (!chatAccepted) return;
     // Stop has a synchronous fast path, even while a network request is pending.
     const normalized = address.text;
     const stopping = new RegExp(`^(stop|cancel|pare|parar|cancele|cancelar)${controlEnd}`, 'i').test(normalized);
@@ -509,7 +541,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (stopping) {
       invalidateRequests();
       stop().catch(console.error);
-      bot.chat('Stopped. I saved our progress. Say "Jev resume" to keep going.');
+      bot.chat(planner ? 'Parei a tarefa; continuo me defendendo. Diga "Jev retome" para continuar.' : 'Stopped. I saved our progress. Say "Jev resume" to keep going.');
       return;
     }
     if (!ready) { bot.chat('Still loading the world; please repeat the request in a moment. Stop is available now.'); return; }
@@ -720,7 +752,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       // seat comes a moment after the spawn, and no crossing is under way
       // this soon after joining.
       const joinedAt = Date.now();
-      const seated = () => { if (Date.now() - joinedAt < 5000) require('./boats').leaveStrandedVehicle(bot).then(left => left && console.log('[bot] joined in a boat; got out'), err => console.log(`[bot] joined in a boat and could not get out: ${err.message}`)); };
+      const seated = () => { if (!planner && Date.now() - joinedAt < 5000) require('./boats').leaveStrandedVehicle(bot).then(left => left && console.log('[bot] joined in a boat; got out'), err => console.log(`[bot] joined in a boat and could not get out: ${err.message}`)); };
       bot.once('mount', seated);
       if (bot.vehicle || bot._seatedIn != null) seated();
       // The seat can come by the raw packet alone (compatibility.js), with no mount event.
@@ -732,11 +764,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       // (lava-escape.js settleAfterJoin, note 756). 25597 came back standing
       // in its poured water a block from lava, was asked the turn's question
       // while the flow carried it in, and died there.
-      try { await require('./lava-escape').settleAfterJoin(bot, survival); saveSurvival(); }
+      try { if (!planner) await require('./lava-escape').settleAfterJoin(bot, survival); saveSurvival(); }
       catch (err) { console.error('[join] reading the ground:', err.message); }
       if (ended || !bot.isAlive) return;
       ready = true;
       console.log(JSON.stringify({ sessionReady: true, username: bot.username }));
+      if (planner) { bot.chat('Aguardando seu pedido. Continuo atento a perigos. Diga "Jev retome" para continuar uma tarefa salva.'); return; }
       const saved = store.read();
       if (saved && ['running', 'recovering'].includes(saved.status) && !survival.state.paused) {
         bot.chat(survival.state.recovery?.status === 'pending' ? "I'm back! I'll look for my dropped items, then carry on." : "I'm back! I'll carry on where I left off.");
@@ -779,8 +812,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   });
   function close(reason) {
     if (ended) return;
+    if (planner) setWaitingForRequest(true);
     observation?.detach(String(reason || 'connection closed'));
     ready = false; clearInterval(idleTimer); invalidateRequests();
+    reactiveWait?.cancel().catch(() => {});
     if (active && !active.task.cancelled) stop('running').catch(console.error);
     // Fence late saves from this connection before a replacement reads state.
     ended = true;
