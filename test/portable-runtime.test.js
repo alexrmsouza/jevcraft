@@ -5,9 +5,18 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const net = require('node:net');
 const root = path.join(__dirname, '..');
 const fixture = t => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jev space ü-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })); return dir; };
 const readyConsole = dir => fs.writeFileSync(path.join(dir, '.jev-server.json'), JSON.stringify({ pid: process.pid, launcherPid: process.pid, session: 'fixture' }));
+async function serverFixture(t) {
+  const dir = fixture(t), reservation = net.createServer();
+  await new Promise((resolve, reject) => { reservation.once('error', reject); reservation.listen(0, '127.0.0.1', resolve); });
+  const { port } = reservation.address();
+  await new Promise((resolve, reject) => reservation.close(error => error ? reject(error) : resolve()));
+  fs.writeFileSync(path.join(dir, 'server.properties'), `server-port=${port}\r\n`);
+  return dir;
+}
 
 test('platform reads CRLF properties and verifies supervisor registration', t => {
   const p = require('../src/platform');
@@ -86,7 +95,7 @@ test('console file adapter queues normal paths and preserves batched commands', 
 
 test('server launcher drives a fake process through a path with spaces and exits on stop', async t => {
   const { writeConsole, startServer, serverRunning } = require('../scripts/lib/server');
-  const dir = fixture(t);
+  const dir = await serverFixture(t);
   const fake = path.join(dir, 'fake java.js');
   fs.writeFileSync(fake, "let text=''; process.stdin.on('data', data => { text += data; require('fs').appendFileSync('received.txt', data); if(text.includes('stop\\n')) process.exit(0); });");
   fs.writeFileSync(path.join(dir, 'server-launch.json'), JSON.stringify({ java: process.execPath, args: [fake] }));
@@ -123,7 +132,7 @@ test('launcher help has no filesystem side effects', t => {
 });
 
 test('launcher cleans its lock and timers after an executable fails to spawn', async t => {
-  const dir = fixture(t);
+  const dir = await serverFixture(t);
   fs.writeFileSync(path.join(dir, 'server-launch.json'), JSON.stringify({ java: path.join(dir, 'missing-java.exe') }));
   const child = spawn(process.execPath, [path.join(root, 'scripts/server/start.js'), '--directory', dir], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });

@@ -13,6 +13,8 @@ const client = new TypeSafe();
 const shutdown = new AbortController();
 for (const event of ['SIGINT', 'SIGTERM']) process.once(event, () => shutdown.abort());
 async function main() {
+  const { planner, provider, model } = await require('./src/planner-config').configuredPlanner({ signal: shutdown.signal });
+  if (planner) console.log(JSON.stringify({ planner: { provider, model } }));
   const path = require('node:path');
   const label = `${config.host}-${config.port}-${config.username}`;
   // The flight recording the audits read; JEV_FLIGHT=0 turns it off.
@@ -46,7 +48,7 @@ async function main() {
   fs.mkdirSync(path.dirname(pidFile), { recursive: true }); fs.writeFileSync(pidFile, `${process.pid}\n`);
   process.once('exit', () => { try { if (fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(pidFile); } catch (_) {} });
   try {
-    await reconnect(() => createSession(config, client, { recorder }), {
+    await reconnect(() => createSession(config, client, { recorder, planner }), {
       signal: shutdown.signal, report: event => console.log(JSON.stringify({ connection: event })),
     });
   } finally { await recorder?.close(); }

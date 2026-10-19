@@ -47,7 +47,7 @@ function unworkable(bot, spec) {
   return null;
 }
 
-function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), recorder,
+function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), recorder, planner,
   runLedger = path.join(stateDirectory, 'run-ledger.md') } = {}) {
   let ended = false, spawned = false, resolveClosed;
   const connectedAt = Date.now();
@@ -477,7 +477,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // Acknowledgements from other bots must never start new work. New goals
     // require an explicit name; short controls remain convenient when unprefixed.
     const me = String(bot.username || config.username || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const control = new RegExp(`^(stop|cancel|resume|status)(,? (now|please|${me}))*[.!?]?$`, 'i');
+    const controlEnd = `(,? (now|please|agora|por favor|${me}))*[.!?]?$`;
+    const control = new RegExp(`^(stop|cancel|resume|status|pare|parar|cancele|cancelar|retome|retomar|continue)${controlEnd}`, 'i');
     // The answer to a question Jev just asked. "Did you mean short grass or
     // grass block?" got "grass block" back, with no name in front, and the
     // gate dropped it; "Jev grass block" started a new request that had lost
@@ -494,7 +495,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (!address.explicit && !control.test(address.text)) return;
     // Stop has a synchronous fast path, even while a network request is pending.
     const normalized = address.text;
-    const stopping = new RegExp(`^(stop|cancel)(,? (now|please|${me}))*[.!?]?$`, 'i').test(normalized);
+    const stopping = new RegExp(`^(stop|cancel|pare|parar|cancele|cancelar)${controlEnd}`, 'i').test(normalized);
+    const resuming = new RegExp(`^(resume|retome|retomar|continue)${controlEnd}`, 'i').test(normalized);
     // "Stop!" between two players is not addressed to the bot. Unprefixed,
     // it counts from whoever gave the work in hand, or when nobody else is
     // here to be talking to; it froze the bot, self-care included, in the
@@ -503,7 +505,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const company = Object.values(bot.players).filter(p => p.username !== bot.username && p.username !== from).length;
     // "Stop Jev", with the name last, is as addressed as "Jev stop".
     const named = chatNames(bot.username || config.username).some(name => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(address.text));
-    if (stopping && !address.explicit && !named && owner !== from && company > 0) return;
+    if ((stopping || resuming) && !address.explicit && !named && owner !== from && company > 0) return;
     if (stopping) {
       invalidateRequests();
       stop().catch(console.error);
@@ -513,8 +515,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (!ready) { bot.chat('Still loading the world; please repeat the request in a moment. Stop is available now.'); return; }
     // A literal status request reads local state immediately, even while a
     // previous natural-language request is waiting for a model response.
-    if (/^status( please)?[.!?]?$/i.test(normalized)) {
+    if (new RegExp(`^status${controlEnd}`, 'i').test(normalized)) {
       bot.chat(statusMessage(bot, active, store.read())); return;
+    }
+    if (resuming) {
+      invalidateRequests();
+      resume(generation).catch(console.error);
+      return;
     }
     // Acknowledge instantly. Everything below can wait on the model, and a
     // motionless bot reads as "it did not hear me" rather than "it is thinking".
@@ -524,7 +531,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // The request pays for its own understanding. One that turns out to
     // start no work folds that cost into the standing bucket instead.
     const run = ledger.open({ kind: 'request', name: request });
-    const requestClient = withRun(withRequestSignal(client, requestController.signal), run.id);
+    const requestSignal = requestController.signal;
+    const requestClient = withRun(withRequestSignal(client, requestSignal), run.id);
     let launched = false;
     pendingRequests++;
     pending = pending.then(async () => {
@@ -533,14 +541,27 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       // not like it did not hear. Not over work in hand: the glance turns the
       // head, and a dig in progress needs it where it is.
       const stopThinking = literal || active ? () => {} : thinking(bot);
-      const spec = literal ? { kind: 'operator_command' } : await interpret(requestClient, request, from, bot.username, {
+      const inventory = {};
+      for (const item of bot.inventory.items()) inventory[item.name] = (inventory[item.name] || 0) + item.count;
+      const nearbyBlocks = [];
+      if (planner && !literal) {
+        try {
+          const positions = bot.findBlocks({ matching: block => /_(log|stem)$/.test(block.name), maxDistance: 16, count: 16 });
+          for (const at of positions.slice(0, 16)) { const name = bot.blockAt(at)?.name; if (name && !nearbyBlocks.includes(name)) nearbyBlocks.push(name); }
+        } catch (_) { /* no observed nearby wood */ }
+      }
+      const context = {
         registry: bot.registry, players: Object.keys(bot.players),
         ...requestPosition, memory: { ...memory.context(from), found: require('./exploration').foundEntries(world.known) },
         builds: builds.describe(bot, bot.entity.position, bot.game.dimension),
         continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates,
           { speaker: requestPosition.speakerPosition }),
-        inventory: Object.fromEntries(bot.inventory.items().map(item => [item.name, item.count])),
-      }).finally(stopThinking);
+        inventory, gameMode: bot.game.gameMode, dimension: bot.game.dimension,
+        activeGoal: active && !active.idle ? active.goal : undefined, nearbyBlocks,
+      };
+      const spec = literal ? { kind: 'operator_command' } : await (planner
+        ? planner.interpret(request, from, bot.username, context, { signal: requestSignal })
+        : interpret(requestClient, request, from, bot.username, context)).finally(stopThinking);
       // What Jev made of the request is the first thing worth seeing about
       // it, whether or not any work follows.
       if (spec && !literal) {
@@ -548,7 +569,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           clarification: spec.clarification, interpretation: spec.interpretation, itemResolution: spec.itemResolution,
           discoveryResolution: spec.discoveryResolution, buildContinuation: spec.buildContinuation, usage: spec.usage, latencyMs: spec.latencyMs });
       }
-      if (!spec || revision !== generation) return;
+      if (!spec || revision !== generation || ended || requestSignal.aborted) return;
+      if (planner && !literal) {
+        if (!['obtain', 'craft', 'other', 'clarify'].includes(spec.kind) || typeof spec.message !== 'string' ||
+          !spec.message.trim() || spec.message.length > 200 || /[\u0000-\u001f\u007f\u2028\u2029]/.test(spec.message) || spec.message.trimStart().startsWith('/') ||
+          (['obtain', 'craft'].includes(spec.kind) && (!Object.hasOwn(bot.registry.itemsByName, spec.item) || !Number.isSafeInteger(spec.count) || spec.count < 1 || spec.count > 1024 || typeof spec.deliver !== 'boolean'))) {
+          throw new Error('The planner returned an invalid single-goal response.');
+        }
+      }
       if (spec.kind === 'operator_command') {
         const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());
         if (!allowed.includes(from.toLowerCase())) { bot.chat(`${from} is not enabled for Jev's operator commands`); return; }
@@ -579,7 +607,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (spec.kind === 'other') {
-        bot.chat('Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.');
+        bot.chat(planner ? spec.message : 'Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.');
         return;
       }
       if (spec.kind === 'memory') {
@@ -669,7 +697,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           finish: `I'll carry on with ${spec.buildContinuation.name}.`,
           repair: `I'll look ${spec.buildContinuation.name} over and put right what is missing.`,
         }[spec.buildContinuation.mode];
-      bot.chat(changing ? changing :
+      bot.chat(planner ? spec.message : changing ? changing :
         spec.kind === 'build' ? "I'll make a plan, find a good spot, and build it for you." :
         spec.kind === 'bundle' ? `Working on the whole list: ${bundleSummary(spec)}.` :
         spec.kind === 'find' ? `I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.` :
