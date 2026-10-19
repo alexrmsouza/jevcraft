@@ -26,8 +26,8 @@ function rootWithBaseline(name = 'baseline-abc1234') {
   const co = path.join(root, '.arms', name);
   fs.mkdirSync(co, { recursive: true });
   fs.writeFileSync(path.join(co, 'index.js'), '');
-  fs.symlinkSync(path.join(root, 'node_modules'), path.join(co, 'node_modules'));
-  fs.symlinkSync(path.join(root, '.bot-state'), path.join(co, '.bot-state'));
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(co, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  fs.symlinkSync(path.join(root, '.bot-state'), path.join(co, '.bot-state'), process.platform === 'win32' ? 'junction' : 'dir');
   return { root, co };
 }
 
@@ -51,7 +51,7 @@ test('note 666: a checkout whose .bot-state is not ROOT\'s is refused, not run a
   const loose = path.join(root, '.arms', 'loose');
   fs.mkdirSync(path.join(loose, '.bot-state'), { recursive: true });
   fs.writeFileSync(path.join(loose, 'index.js'), '');
-  fs.symlinkSync(path.join(root, 'node_modules'), path.join(loose, 'node_modules'));
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(loose, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   assert.throws(() => arms.setArm(25593, 'loose', { root }), /not a link to/);
   assert.equal(fs.existsSync(path.join(root, '.bot-state', 'arms', '25593')), false);
   fs.mkdirSync(path.join(root, '.bot-state', 'arms'), { recursive: true });

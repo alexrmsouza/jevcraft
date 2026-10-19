@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // Whether light stops a blaze spawner, as the 26.1.2 jar says it does (note
 // 606): a live blaze spawner on a brick floor along a netherrack wall, a
 // probe player in creative ten blocks off (within the spawner's sixteen,
@@ -12,7 +13,7 @@ const { Vec3 } = require('vec3');
 const { arenaDir } = require('./lib/arena');
 const T = require('../src/blaze-tactics');
 const CONSOLE = process.env.ARENA_CONSOLE || path.join(arenaDir(), 'console.in');
-const say = l => fs.appendFileSync(CONSOLE, l + '\n');
+const say = l => writeConsoleFile(CONSOLE, l + '\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const seconds = Number(process.argv[2] || 60);
 const PORT = Number(process.env.MC_PORT || 25574);

@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // Jev down on a scratch server (note 707): the bot's own loop (work.js
 // runIdle, the arbiter live) with its TypeSafe client pointed at a closed
 // port. What is looked for: the question held, '[jev down]' in the log and
@@ -14,7 +15,7 @@ const { pathfinder } = require('mineflayer-pathfinder');
 const PORT = Number(process.env.MC_PORT || 0), CONSOLE = process.env.ARENA_CONSOLE;
 if (!PORT || !CONSOLE) { console.error('MC_PORT and ARENA_CONSOLE, a scratch server\'s'); process.exit(1); }
 if ([25565].includes(PORT) || (PORT >= 25581 && PORT <= 25610)) { console.error('not a trial server'); process.exit(1); }
-const say = l => fs.appendFileSync(CONSOLE, l + '\n');
+const say = l => writeConsoleFile(CONSOLE, l + '\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const NAME = 'DownProbe';
 const CLOSED = process.env.CLOSED_ENDPOINT || 'http://127.0.0.1:1/v1/systemone';

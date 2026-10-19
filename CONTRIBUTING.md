@@ -15,11 +15,14 @@ When you add a question, define it in [`src/decisions`](src/decisions/index.js):
 
 ```sh
 npm ci
-cp .env.example .env   # add a TypeSafe key; a Minecraft server is optional
+node -e "require('node:fs').copyFileSync('.env.example', '.env')"
+npm run check:portability
 npm test               # no network, no server
 ```
 
-Node 22 or newer. `npm test` runs about two thousand tests in about a minute and needs no key.
+Node 22 or newer. Add a TypeSafe key to `.env` for live decisions; offline tests
+need no key or Minecraft server. See [Platform setup](docs/platforms.md) for
+local server tools and optional prerequisites.
 
 On Windows, use native Node.js 22 or newer from PowerShell or Command Prompt.
 In PowerShell, copy the environment template with `Copy-Item .env.example .env`.

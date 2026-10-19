@@ -11,7 +11,7 @@
 // Eras are runs of `size` note numbers.
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { analyse } = require('./lib/audit');
 
 const ROOT = path.join(__dirname, '..');
@@ -20,7 +20,7 @@ const args = process.argv.slice(2);
 const SIZE = Number(args[args.indexOf('--size') + 1]) || 6;
 
 // The note number in force at each commit time, oldest first.
-const commits = execSync('git log --format=%ct%x09%s', { cwd: ROOT }).toString().split('\n')
+const commits = execFileSync('git', ['log', '--format=%ct%x09%s'], { cwd: ROOT }).toString().split('\n')
   .map(l => { const [t, s] = l.split('\t'); const m = /Trial notes: ([\d, ]+)/.exec(s || ''); return m ? { t: Number(t) * 1000, n: Math.max(...m[1].split(/[, ]+/).filter(Boolean).map(Number)) } : null; })
   .filter(Boolean).sort((a, b) => a.t - b.t);
 let high = 0;

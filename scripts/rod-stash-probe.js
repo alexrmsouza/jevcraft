@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The rods into a chest and back out, on a scratch server (note 704): a
 // probe player in a netherrack room in the Nether, 4 blaze rods and 2 ender
 // pearls carried, a blaze (no AI) behind a wall. src/rod-stash.js picks the
@@ -18,7 +19,7 @@ const PORT = Number(process.env.MC_PORT || 0), CONSOLE = process.env.ARENA_CONSO
 if (!PORT || !CONSOLE) { console.error('MC_PORT and ARENA_CONSOLE, a scratch server\'s'); process.exit(1); }
 if ([25565].includes(PORT) || (PORT >= 25581 && PORT <= 25610)) { console.error('not a trial server'); process.exit(1); }
 const LOG = process.env.ARENA_LOG;
-const say = l => fs.appendFileSync(CONSOLE, l + '\n');
+const say = l => writeConsoleFile(CONSOLE, l + '\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const NAME = 'StashProbe', D = 'minecraft:the_nether', X = 2000, Y = 100, Z = 2000;
 const run = c => say(`execute in ${D} run ${c}`);

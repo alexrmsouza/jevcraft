@@ -96,21 +96,32 @@ test('the same failing question asked ten times: at most two askings, then escal
   assert.equal(asks, 2);
 });
 
-test('the same answer to the same facts, having changed nothing, is held and then asked with that said, not rested unasked (notes 573, 724)', async () => {
+test('the same answer to the same facts, having changed nothing, is held and then asked with that said, not rested unasked (notes 573, 724)', async t => {
   // The same answer to the same facts, each time toward a place six blocks on, so no place in the ledger
   // matches. The repeat rule used to hold it at the third asking and rest it, the one way left taken unasked
   // (note 573); an answer that changed nothing is now held until something changes or its wait passes, and
   // asked with it said (unchanged.js, note 724).
+  // The stand-in's 5 ms hold must not expire while the next question is built.
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse('2026-09-28T02:40:00Z') });
   const { decide } = require('../src/decisions');
   const bot = { entity: { position: new Vec3(0.5, 12, 0.5) }, game: { dimension: 'overworld' }, inventory: { items: () => [] } };
   const goal = { kind: 'obtain', item: 'iron_ingot', step: { action: 'night_mine' } };
   const seen = [];
   const client = { systemOne: async ({ state, questions }) => { seen.push({ state, options: questions.branch_0 }); return { answers: { branch_0: { choice: 'ore_0', confidence: 0.9 } } }; } };
   const tree = n => ({ ore_0: { description: 'Iron ore in the wall.', target: { x: 6 * n, y: 12, z: 5 } }, branch: { description: 'A branch tunnel.' } });
-  await decide('night_mine_target', { client, bot, goal, tree: tree(1), state: {} });
-  await decide('night_mine_target', { client, bot, goal, tree: tree(2), state: {} });
+  const answer = async n => {
+    let settled = false;
+    const pending = decide('night_mine_target', { client, bot, goal, tree: tree(n), state: {} }).finally(() => { settled = true; });
+    while (!settled) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (!settled) t.mock.timers.tick(1000);
+    }
+    return pending;
+  };
+  await answer(1);
+  await answer(2);
   assert.match(seen[1].state.answerChangedNothing, /^ore 0 was chosen \d+ seconds? ago and changed nothing .*; this question was held/);
-  const third = await decide('night_mine_target', { client, bot, goal, tree: tree(3), state: {} });
+  const third = await answer(3);
   assert.deepEqual(third.path, ['ore_0'], 'Jev\'s answer, told it changed nothing');
   assert.match(seen[2].state.answerChangedNothing, /the last 2 answers to this question in a row changed nothing/);
   // Said on the option once: by the ledger's words where it has them, else the rule's.

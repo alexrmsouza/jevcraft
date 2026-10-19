@@ -78,7 +78,7 @@ A generative LLM reviewing recovery decisions agreed with Jev, took 14 seconds p
 
 The agents change the bot's code, prices and options. Jev itself is not retrained.
 
-1. Run 7 to 20 trials in parallel, one Minecraft server each. Most start from saved stages (entering the Nether, reaching a fortress) so the hard parts get many attempts per hour. Stage saves come from [checkpoint.sh](scripts/trials/checkpoint.sh), which snapshots every trial every 30 seconds.
+1. Run 7 to 20 trials in parallel, one Minecraft server each. Most start from saved stages (entering the Nether, reaching a fortress) so the hard parts get many attempts per hour. Stage saves come from [checkpoint.js](scripts/trials/checkpoint.js), which snapshots every trial every 30 seconds.
 2. A watcher reports each death or loop. The [progress audit](scripts/trials/progress-audit.js) and trail maps catch trials that are stuck without failing.
 3. A Claude subagent triages each failure in its own git worktree. It starts from the [death timeline](scripts/death-timeline.js), which shows the last seconds frame by frame with every decision, and the [flight record](src/recorder/index.js), one frame per second plus one per decision. It fixes the cause in general, adds tests that fail without the fix, checks the recorded question against live Jev before and after, and writes a trial note. Most of notes 500 to 625 were written this way.
 4. Fixes are merged in a separate worktree after `npm test`, a `JEV_ARBITER=shadow` check and the [replay suite](scripts/replay-suite.js): recorded questions from past failures, each with acceptable and forbidden answers, asked live five times. The suite runs in seconds with no Minecraft server.
@@ -239,14 +239,16 @@ Jev is only as good as the options and prices it is given. It cannot invent an o
 
 ## Running it
 
-You need Node.js 22 or newer, a [TypeSafe](https://typesafe.ai/) API key, and macOS or Linux. The trial scripts download Java and the Minecraft server for you.
+You can run Jev on Windows, Linux or macOS with Node.js 22 or newer, Git and a [TypeSafe](https://typesafe.ai/) API key. Connecting the bot to an existing server does not require Java on the bot's machine. The local trial setup can download Java 25 and the Minecraft server. See [Platform setup](docs/platforms.md) for prerequisites, PowerShell examples and optional tools.
 
 ```sh
-git clone https://github.com/mrubens/jevcraft.git
+git clone https://github.com/alexrmsouza/jevcraft.git
 cd jevcraft
 npm ci
-cp .env.example .env    # then set TYPESAFE_API_KEY in .env
+node -e "require('node:fs').copyFileSync('.env.example', '.env')"
 ```
+
+Set `TYPESAFE_API_KEY` in `.env` before starting the bot. The commands above work in PowerShell, Command Prompt and Unix shells.
 
 ### Playing with Jev
 
@@ -263,13 +265,15 @@ Join the same server and talk to it in chat, for example `Jev come here` or `Jev
 A trial gives Jev a fresh world on its own server and judges the result, the way we test it.
 
 ```sh
-sh scripts/trials/setup.sh 1                          # Java 25, the 26.1.2 server, Fabric and ServerReplay; one server folder on port 25581
+node scripts/trials/setup.js 1 --accept-eula         # Java 25, Minecraft 26.1.2, Fabric and ServerReplay; port 25581
 node scripts/first-days.js start first-days-1         # a fresh Normal world and a fresh bot
 node scripts/first-days.js verdict                    # how it is going, or how it ended
 node scripts/trials/trail-map.js 25581 --minutes 15   # a map of where it has been, in artifacts/trails/
 ```
 
-The first-days trial lasts an hour of real time, three in-game days. To watch, run `sh scripts/trials/spectate.sh <your Minecraft name> &` and join `localhost:25581`; it puts you in Spectator mode on Jev. To run several at once, pass a larger number to `setup.sh` and choose a server with `FIRST_DAYS_PORT=25582`. Later stages (the Nether, fortresses) start from a world a first-days trial finished: see `scripts/midgame.js` and [scripts/README.md](scripts/README.md). Each trial server uses up to 2 GB of memory and about one CPU core.
+Read the [Minecraft EULA](https://aka.ms/MinecraftEULA) before passing `--accept-eula`. `node scripts/trials/setup.js --tools-only` downloads and verifies tools without accepting the EULA or preparing a server. Tools live in the repository's `.tools/` by default; `JEV_TOOLS` or `--tools PATH` chooses another directory.
+
+The first-days trial lasts an hour of real time, three in-game days. To watch, run `node scripts/trials/spectate.js <your Minecraft name>` in another terminal and join `localhost:25581`; it puts you in Spectator mode on Jev. To run several at once, pass a larger number to `setup.js` and choose a server with `FIRST_DAYS_PORT`. In PowerShell, use `$env:FIRST_DAYS_PORT = '25582'` before starting the trial; in Command Prompt, use `set FIRST_DAYS_PORT=25582`; in a Unix shell, use `FIRST_DAYS_PORT=25582 node scripts/first-days.js start first-days-2`. Later stages start from saved worlds: see `scripts/midgame.js` and [scripts/README.md](scripts/README.md). Each trial server uses up to 2 GB of memory and about one CPU core.
 
 ## Code map
 
@@ -325,7 +329,10 @@ In Creative mode the bot has every block. There you can connect a generative LLM
 ## Development
 
 ```sh
-npm test                        # about 2,000 tests, no server or key
+npm run check:portability        # offline platform checks, no server or key
+npm test                        # unit tests, no server or key
+npm run trial -- --help          # trial command index
+npm run server -- --help         # local server launcher
 node scripts/replay-suite.js    # recorded decisions, asked live
 ```
 

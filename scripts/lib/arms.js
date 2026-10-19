@@ -134,7 +134,7 @@ function freshStarts(root = ROOT) {
   try { names = fs.readdirSync(dir).filter(f => f.endsWith('.json')); } catch (_) { return out; }
   for (const f of names) {
     let r; try { r = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { continue; }
-    const m = String(r.source || '').match(/(?:^|\/)\.?trial-sources\/first-days-(\d+)$/);
+    const m = String(r.source || '').replaceAll('\\', '/').match(/(?:^|\/)\.?trial-sources\/first-days-(\d+)$/);
     if (m && r.arm) out.push({ t: Date.parse(r.startedAt), key: m[1], arm: r.arm });
   }
   return out;
@@ -144,6 +144,11 @@ function freshStarts(root = ROOT) {
 // absolute path, cwd ROOT, the trial's environment and JEV_ARM.
 function botSpawn(port, root = ROOT, env = process.env) {
   const arm = armOf(port, root);
+  if (process.platform === 'win32' && real(arm.checkout) !== real(root)) {
+    const source = path.join(root, '.env'), target = path.join(arm.checkout, '.env');
+    if (fs.existsSync(source)) fs.copyFileSync(source, target);
+    else fs.rmSync(target, { force: true });
+  }
   return { arm, command: process.execPath, args: [path.join(arm.checkout, 'index.js')], options: { cwd: root, detached: true,
     env: { ...env, MC_HOST: '127.0.0.1', MC_PORT: String(port), MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1', JEV_ARM: arm.name } } };
 }
@@ -164,19 +169,35 @@ function launch(port, out, { root = ROOT, env = process.env, run = spawn, commit
 // ROOT/.arms/<name>, with node_modules, .env and .bot-state linked to ROOT's.
 // Where the commit's package-lock.json differs from ROOT's, its own
 // node_modules is installed instead of the link.
-function setup(name, commit, { root = ROOT, run = execFileSync, say = console.log } = {}) {
+function npmCli(env = process.env) {
+  const nodes = [...new Set([path.dirname(process.execPath), path.dirname(fs.realpathSync(process.execPath))])];
+  const candidates = [env.npm_execpath, ...nodes.flatMap(dir => [
+    path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.resolve(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ])];
+  const found = candidates.find(file => file && /\.(?:c?js|mjs)$/i.test(file) && fs.existsSync(file));
+  if (!found) throw new Error('Cannot find npm-cli.js. Install Node.js with npm, or run setup through npm (npm_execpath).');
+  return found;
+}
+
+function setup(name, commit, { root = ROOT, run = execFileSync, say = console.log, env = process.env } = {}) {
   if (!/^[\w.-]+$/.test(name || '') || name === 'main') throw new Error('an arm name of letters, digits, dots and dashes (not "main")');
   if (!commit) throw new Error('setup <name> <commit>');
   const dir = path.join(checkoutsDir(root), name);
   if (fs.existsSync(dir)) throw new Error(`${dir} exists (git worktree remove ${dir} first to move it)`);
   fs.mkdirSync(checkoutsDir(root), { recursive: true });
   run('git', ['worktree', 'add', '--detach', dir, commit], { cwd: root, stdio: 'inherit' });
-  const link = (what, required = true) => { const from = path.join(root, what); if (!fs.existsSync(from)) { if (required) fs.mkdirSync(from, { recursive: true }); else return; } fs.symlinkSync(from, path.join(dir, what)); };
+  const link = (what, required = true) => {
+    const from = path.join(root, what), target = path.join(dir, what);
+    if (!fs.existsSync(from)) { if (required) fs.mkdirSync(from, { recursive: true }); else return; }
+    if (process.platform === 'win32' && !fs.statSync(from).isDirectory()) fs.copyFileSync(from, target);
+    else fs.symlinkSync(from, target, fs.statSync(from).isDirectory() ? (process.platform === 'win32' ? 'junction' : 'dir') : 'file');
+  };
   link('.bot-state'); link('.env', false);
   let sameLock = true;
   try { run('git', ['diff', '--quiet', commit, 'HEAD', '--', 'package-lock.json'], { cwd: root, stdio: 'ignore' }); } catch (_) { sameLock = false; }
   if (sameLock) link('node_modules');
-  else { say(`package-lock.json differs between ${commit} and HEAD: installing ${name}'s own node_modules`); run('npm', ['ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit' }); }
+  else { say(`package-lock.json differs between ${commit} and HEAD: installing ${name}'s own node_modules`); run(process.execPath, [npmCli(env), 'ci', '--no-audit', '--no-fund'], { cwd: dir, stdio: 'inherit', env }); }
   const why = problems(dir, root);
   if (why.length) throw new Error(why.join('; '));
   say(`arm ${name}: ${dir} at ${commitOf(dir)}`);
@@ -212,4 +233,4 @@ function main(argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) { try { main(); } catch (err) { console.error(err.message); process.exit(1); } }
-module.exports = { armOf, nameOf, commitOf, problems, listing, armCommits, recordStart, readStarts, owed, freshStarts, PAIR_MS, botSpawn, launch, setup, setArm, armsDir, checkoutsDir };
+module.exports = { armOf, nameOf, commitOf, problems, listing, armCommits, recordStart, readStarts, owed, freshStarts, PAIR_MS, botSpawn, launch, setup, setArm, armsDir, checkoutsDir, npmCli };

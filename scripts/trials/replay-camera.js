@@ -4,11 +4,15 @@
 // written into it as ReplayMod's working timeline ("" in timelines.json).
 // The camera follows Jev from behind and above, placed from his own
 // positions in the flight record, a keyframe a second, looking at him.
-const fs = require('fs'), path = require('path'), os = require('os'), { execFileSync } = require('child_process');
+const fs = require('fs'), path = require('path');
+const { unzipSync, zipSync, strFromU8, strToU8 } = require('fflate');
 
 // The replay's metaData.json: date (ms, when it began) and duration (ms).
 function replayMeta(file) {
-  try { return JSON.parse(execFileSync('unzip', ['-p', file, 'metaData.json'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()); } catch (_) { return null; }
+  try {
+    const contents = unzipSync(fs.readFileSync(file), { filter: entry => entry.name === 'metaData.json' });
+    return JSON.parse(strFromU8(contents['metaData.json']));
+  } catch (_) { return null; }
 }
 
 // Jev's positions from the flight records of a port, from..to (ms).
@@ -59,10 +63,14 @@ function cameraTimeline({ frames, from, to, recStart, back = 4, up = 2.8 }) {
 
 // Put the timeline into the replay (timelines.json at the zip's root).
 function writeTimeline(file, timeline) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-'));
-  fs.writeFileSync(path.join(dir, 'timelines.json'), JSON.stringify(timeline));
-  execFileSync('zip', ['-q', '-j', file, path.join(dir, 'timelines.json')]);
-  fs.rmSync(dir, { recursive: true, force: true });
+  const contents = unzipSync(fs.readFileSync(file));
+  contents['timelines.json'] = strToU8(JSON.stringify(timeline));
+  const updated = zipSync(contents);
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporary, updated, { flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } finally { fs.rmSync(temporary, { force: true }); }
 }
 
 module.exports = { replayMeta, framesFor, lookAt, cameraTimeline, writeTimeline };

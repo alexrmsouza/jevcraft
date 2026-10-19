@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The blaze spawner, drilled: the whole bot (session.js, the ladder's rod
 // stage, the survival layer, the arbiter, the flight record) put beside a
 // live blaze spawner on a private server with the kit a trial brings, and
@@ -45,7 +46,7 @@ const KIT = {
   items: [['iron_sword', 1], ['iron_pickaxe', 1], ['cobblestone', 32], ['netherrack', 32], ['cooked_beef', Number(process.env.SPAWNER_FOOD || 10)]],
 };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const command = async line => { fs.writeFileSync(consolePath, line + '\n'); await sleep(120); };
+const command = async line => { writeConsoleFile(consolePath, line + '\n'); await sleep(120); };
 const commands = async lines => { for (const line of lines) await command(line); };
 
 function table(rows) {

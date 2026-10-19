@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // A walk along a one-wide span with a turn, high over the arena's flat
 // ground (note 1350): the live bot's movements and navigate, as the walk to a
 // portal at a span's end goes (work.js enterPortal: GoalNear the portal,
@@ -21,7 +22,7 @@ const consolePath = path.join(arenaDir(), 'console.in');
 const username = process.env.ARENA_USER || 'ArenaJev';
 const runs = Number(process.env.SPAN_RUNS || 8);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const command = async line => { fs.writeFileSync(consolePath, line + '\n'); await sleep(150); };
+const command = async line => { writeConsoleFile(consolePath, line + '\n'); await sleep(150); };
 // The span: from (X, Y, Z) six east, then six north, a pad of 3x3 at each end.
 const X = 3000, Y = 120, Z = 3000;
 const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '26.1', auth: 'offline' });

@@ -7,8 +7,9 @@
 //   node scripts/trials/death-index.js ["<instance>/minecraft/replay_recordings"]
 // Writes artifacts/deaths.json.
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
-const ROOT = path.join(__dirname, '..', '..');
-const OUT = process.argv[2] || (process.env.REPLAY_RECORDINGS || path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings'));
+const { replayDirectory } = require('../lib/replay-paths');
+const ROOT = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..', '..');
+const OUT = replayDirectory({ explicit: process.argv[2] });
 const DEATH = / Jev ((was|died|fell|drowned|blew|burned|hit the|tried|walked into|suffocated|experienced|went|froze|starved|withered|discovered)[^\n]*)/;
 const servers = fs.readdirSync(ROOT).filter(d => /^\.clean-run(-\d+)?$/.test(d));
 const deaths = [];
@@ -42,10 +43,10 @@ for (const d of deaths) {
   d.recording = rec; d.secondsIn = Math.round((at - startOf(rec)) / 1000);
   const slug = `${d.world}-${d.local.slice(11).replaceAll(':', '')}-${d.cause.replace(/^Jev /, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`.slice(0, 90);
   d.file = `${slug}.mcpr`;
-  try { fs.mkdirSync(OUT, { recursive: true }); if (!fs.existsSync(path.join(OUT, d.file))) fs.copyFileSync(rec, path.join(OUT, d.file)); } catch (err) { d.copyError = err.message; }
+  try { replayDirectory({ explicit: OUT, required: true }); if (!fs.existsSync(path.join(OUT, d.file))) fs.copyFileSync(rec, path.join(OUT, d.file)); } catch (err) { d.copyError = err.message; }
 }
 const found = deaths.filter(d => d.recording);
 fs.mkdirSync(path.join(ROOT, 'artifacts'), { recursive: true });
 fs.writeFileSync(path.join(ROOT, 'artifacts', 'deaths.json'), JSON.stringify(found, null, 2));
-for (const d of found) console.log(`${d.file}  death at ${Math.floor(d.secondsIn / 60)}:${String(d.secondsIn % 60).padStart(2, '0')} into the replay`);
+for (const d of found) console.log(`${d.file}  death at ${Math.floor(d.secondsIn / 60)}:${String(d.secondsIn % 60).padStart(2, '0')} into the replay${d.copyError ? `  [copy failed: ${d.copyError}]` : ''}`);
 console.log(`${found.length} deaths with recordings (${deaths.length - found.length} before the recording servers)`);

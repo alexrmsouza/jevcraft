@@ -271,7 +271,10 @@ function trialArm(trial, runs) {
   if (trial.arm) return arms.size === 1 && !arms.has(trial.arm) ? 'mixed' : trial.arm;
   return arms.size === 1 ? [...arms][0] : 'main';
 }
-const startKind = t => /\/stages\/fortress\//.test(String(t.source || '')) ? 'fortress save' : /\/stages\/nether\//.test(String(t.source || '')) ? 'nether save' : /trial-sources\/first-days-(\d+)/.test(String(t.source || '')) ? `fresh ${String(t.source).match(/first-days-(\d+)/)[1]}` : 'other';
+const startKind = t => {
+  const source = String(t.source || '').replaceAll('\\', '/');
+  return /\/stages\/fortress\//.test(source) ? 'fortress save' : /\/stages\/nether\//.test(source) ? 'nether save' : /trial-sources\/first-days-(\d+)/.test(source) ? `fresh ${source.match(/first-days-(\d+)/)[1]}` : 'other';
+};
 
 // ---- the comparison ----------------------------------------------------------
 function summarize(runs, trials) {

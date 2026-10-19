@@ -19,7 +19,8 @@
 // all four.
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { listenerPid: pid, isAlive: alive, stopProcess } = require('./lib/platform');
+const { writeConsole, startServer } = require('./lib/server');
 const { analyse } = require('./lib/audit');
 const { strandedFromFrames } = require('./lib/stranded');
 const { spellsOf, overlapMs, within, INFRA, says: jevDownSays } = require('./lib/jev-down');
@@ -75,8 +76,6 @@ const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const pid = port => { try { return execSync(`lsof -tiTCP:${port} -sTCP:LISTEN`).toString().trim().split('\n')[0] || null; } catch (_) { return null; } };
-const alive = p => { try { process.kill(Number(p), 0); return true; } catch (_) { return false; } };
 
 // What the frames show, each counted once reached: the Nether by the
 // dimension the bot stood in; a fortress by walking in one (the sweep's
@@ -421,12 +420,12 @@ async function start(world, source, archive) {
   fs.mkdirSync(path.dirname(starting), { recursive: true }); fs.writeFileSync(starting, `${process.pid}\n`);
   try {
     const server = pid(PORT), bot = botPid();
-    if (bot) { process.kill(Number(bot)); await sleep(3000); }
+    if (bot) { stopProcess(bot); await sleep(3000); }
     if (server) {
-      fs.writeFileSync(path.join(SERVER, 'console.in'), 'stop\n');
+      writeConsole(SERVER, 'stop\n');
       for (let i = 0; i < 60 && alive(server); i++) await sleep(1000);
-      if (alive(server)) { process.kill(Number(server), 'SIGTERM'); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
-      if (alive(server)) { process.kill(Number(server), 'SIGKILL'); await sleep(2000); }
+      if (alive(server)) { stopProcess(server); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
+      if (alive(server)) { stopProcess(server, { force: true }); await sleep(2000); }
     }
     if (pid(PORT)) throw new Error(`The old server is still on ${PORT}; nothing was started`);
     // The world as the first-days trial left it, copied: the source stays.
@@ -447,15 +446,15 @@ async function start(world, source, archive) {
       for (const o of known.values()) if (!mine.some(m => m.uuid === o.uuid)) mine.push(o);
       fs.writeFileSync(path.join(SERVER, 'ops.json'), JSON.stringify(mine, null, 2));
     } catch (_) {}
-    spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
+    startServer(SERVER, { root: ROOT });
     for (let i = 0; i < 120 && !pid(PORT); i++) await sleep(1000);
     const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
     for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
     if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on ${PORT} did not load ${world}`);
     // The watcher (TRIAL_WATCHER) is made an operator on every trial server,
     // to spectate and follow Jev; Jev itself never is.
-    if (trialWatcher()) fs.writeFileSync(path.join(SERVER, 'console.in'), `op ${trialWatcher()}\n`);
-    for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
+    if (trialWatcher()) writeConsole(SERVER, `op ${trialWatcher()}\n`);
+    for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; stopProcess(other, { force: true }); await sleep(1500); }
     // This server's state set aside; the source trial's state in its place,
     // under this server's name.
     const aside = path.join(STATE, `archive-${IDENTITY}-${Date.now()}`);

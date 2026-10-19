@@ -24,7 +24,7 @@
 // JEV_ROOT reads another checkout's servers and records (from a worktree).
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { listenerPid, readProperties, serverDirectory } = require('../lib/platform');
 const JD = require('../lib/jev-down');
 
 const ROOT = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..', '..');
@@ -755,16 +755,16 @@ function verdictOf(m, minutes) {
 function runningPorts() {
   const out = [];
   for (const d of fs.readdirSync(ROOT).filter(d => /^\.clean-run(-\d+)?$/.test(d))) {
-    let props; try { props = fs.readFileSync(path.join(ROOT, d, 'server.properties'), 'utf8'); } catch (_) { continue; }
-    const world = props.match(/^level-name=(.*)$/m)?.[1], port = Number(props.match(/^server-port=(\d+)/m)?.[1]);
+    let props; try { props = readProperties(path.join(ROOT, d, 'server.properties')); } catch (_) { continue; }
+    const world = props['level-name'], port = Number(props['server-port']);
     if (!/^mid-/.test(world || '') || !port) continue;
-    try { execSync(`lsof -tiTCP:${port} -sTCP:LISTEN`, { stdio: ['ignore', 'pipe', 'ignore'] }); } catch (_) { continue; }
+    if (!listenerPid(port)) continue;
     out.push({ port, world });
   }
   return out.sort((a, b) => a.port - b.port);
 }
 function worldOn(port) {
-  try { return fs.readFileSync(path.join(ROOT, port === 25581 ? '.clean-run' : `.clean-run-${port}`, 'server.properties'), 'utf8').match(/^level-name=(.*)$/m)[1]; } catch (_) { return null; }
+  try { return readProperties(path.join(serverDirectory(ROOT, port), 'server.properties'))['level-name'] || null; } catch (_) { return null; }
 }
 
 // A trial's window: its record, the frames of the last minutes and the

@@ -401,7 +401,7 @@ async function stanceCrowdRecord() {
   if (argv.includes('--stance-crowds')) return stanceCrowdRecord();
   if (argv.includes('--crowds')) return crowdRecord();
   const { trialRecords } = require('./trials/progress-audit');
-  const trials = trialRecords({ now: Date.now() });
+  const trials = trialRecords({ now: Date.now() }).map(trial => typeof trial.source === 'string' ? { ...trial, source: trial.source.replaceAll('\\', '/') } : trial);
   const files = fs.readdirSync(DIR).filter(f => f.endsWith('.jsonl') && (!onlyPort || f.includes(`-${onlyPort}-Jev-`)))
     .map(f => path.join(DIR, f)).filter(f => fs.statSync(f).mtimeMs >= since).sort();
   const out = { deaths: [], other: [], lastDeath: {} };

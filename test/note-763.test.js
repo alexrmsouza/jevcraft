@@ -202,8 +202,11 @@ test('the watcher\'s hour is a reason in the verdict, not an empty list', () => 
   assert.deepEqual(cutReasons('mid-242-zz', 95, { nether: 30 }), ['cut: no fortress in 60 minutes after the Nether']);
   assert.deepEqual(cutReasons('mid-242-zz', 95, { nether: 30, fortress: 50 }), []);
   assert.deepEqual(cutReasons('mid-242-zz-fortress-1', 200, {}), []);
-  const watch = require('fs').readFileSync(require.resolve('../scripts/trials/watch.sh'), 'utf8');
-  assert.match(watch, /death\|loop\|stranded\|\^cut: /);
+  const { needsAttention } = require('../scripts/trials/watch');
+  assert.equal(needsAttention({ reasons: cutReasons('mid-244-hf', 61, {}) }), true);
+  assert.equal(needsAttention({ reasons: [] }), false);
+  assert.equal(needsAttention({ reasons: ['held through a loop: played on', 'died once: played on'] }), false);
+  assert.equal(needsAttention({ done: true, jevDownNow: true }), false);
 });
 
 test('the per-world measure: win_strategy turns count the Nether now and the reach-nether stage as one answer, and trips between the levels', () => {

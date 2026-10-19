@@ -18,7 +18,8 @@
 // world's name; Jev is not an operator.
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { listenerPid: pid, isAlive: alive, stopProcess } = require('./lib/platform');
+const { writeConsole, startServer } = require('./lib/server');
 const { analyse } = require('./lib/audit');
 
 const ROOT = path.join(__dirname, '..');
@@ -31,8 +32,6 @@ const DAYS_MS = 60 * 60000;
 const trials = () => { try { return JSON.parse(fs.readFileSync(LOG, 'utf8')); } catch (_) { return []; } };
 const saveTrials = t => { fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, JSON.stringify(t, null, 2)); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const pid = port => { try { return execSync(`lsof -tiTCP:${port} -sTCP:LISTEN`).toString().trim().split('\n')[0] || null; } catch (_) { return null; } };
-const alive = p => { try { process.kill(Number(p), 0); return true; } catch (_) { return false; } };
 
 // Ladder phases at or past the goal's milestones: the ladder moves past the
 // home rung only once the home is complete, and past the armour only once
@@ -179,19 +178,19 @@ async function start(world) {
 async function startTrial(world) {
   const props = path.join(SERVER, 'server.properties');
   const server = pid(PORT), bot = botPid();
-  if (bot) { process.kill(Number(bot)); await sleep(3000); }
+  if (bot) { stopProcess(bot); await sleep(3000); }
   if (server) {
-    fs.writeFileSync(path.join(SERVER, 'console.in'), 'stop\n');
+    writeConsole(SERVER, 'stop\n');
     for (let i = 0; i < 60 && alive(server); i++) await sleep(1000);
     // A server that said "Stopping" and never went kept the old world up,
     // and trial 5 ran on trial 4's world and player (2026-09-24).
-    if (alive(server)) { process.kill(Number(server), 'SIGTERM'); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
-    if (alive(server)) { process.kill(Number(server), 'SIGKILL'); await sleep(2000); }
+    if (alive(server)) { stopProcess(server); for (let i = 0; i < 20 && alive(server); i++) await sleep(1000); }
+    if (alive(server)) { stopProcess(server, { force: true }); await sleep(2000); }
   }
   if (pid(PORT)) throw new Error(`The old server is still on ${PORT}; nothing was started`);
   fs.writeFileSync(props, fs.readFileSync(props, 'utf8').replace(/^level-name=.*$/m, `level-name=${world}`));
   spectatorNightVision(path.join(SERVER, world));
-  spawn('sh', ['start.sh'], { cwd: SERVER, detached: true, stdio: 'ignore' }).unref();
+  startServer(SERVER, { root: ROOT });
   for (let i = 0; i < 120 && !pid(PORT); i++) await sleep(1000);
   const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
   for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
@@ -199,7 +198,7 @@ async function startTrial(world) {
   // A watchdog that restarts a silent bot may have started one on the old
   // state while the server was down (trial 2 ran on the old state that way):
   // no bot at all before the state is archived.
-  for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
+  for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; stopProcess(other, { force: true }); await sleep(1500); }
   // Fresh bot state: the old files kept aside, the dream seeded.
   const archive = path.join(STATE, `archive-${IDENTITY}-${Date.now()}`);
   fs.mkdirSync(archive, { recursive: true });

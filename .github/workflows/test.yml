@@ -7,15 +7,36 @@ on:
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            shell: cmd
+          - os: ubuntu-latest
+            shell: bash
+          - os: macos-latest
+            shell: bash
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: npm ci
-      - run: npm test
+      - run: npm run check:portability
+      - if: runner.os == 'Windows'
+        run: npm --script-shell=cmd.exe test -- --test-concurrency=8 --test-reporter=spec
+      - if: runner.os != 'Windows'
+        run: npm test -- --test-concurrency=8 --test-reporter=spec
 
   # Live Jev evals need a TypeSafe key. They run on main only, and only when
   # the repository has one configured, so forks and pull requests stay green

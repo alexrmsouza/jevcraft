@@ -45,7 +45,7 @@ test('with no supervisor watching the port a restart asked for is not taken (mid
   await new Promise(r => setTimeout(r, 200));
   assert.equal(bot.quitted, undefined, 'no supervisor: stays up');
   assert.equal(said.length, 1, 'and says so once');
-  assert.match(said[0], /no supervisor is watching port 25590.*supervisor\.sh 25590/);
+  assert.match(said[0], /no supervisor is watching port 25590.*supervisor\.js 25590/);
   supervisor = true;
   await new Promise(r => setTimeout(r, 700));
   assert.equal(bot.quitted, true, 'a supervisor came: quits');
@@ -53,7 +53,7 @@ test('with no supervisor watching the port a restart asked for is not taken (mid
   stop();
 });
 
-test('a supervisor is found by the process list; no port, none', () => {
+test('a supervisor is found by its registration; no port, none', () => {
   const { supervised } = require('../src/quiet-restart');
   assert.equal(supervised(null), false);
   assert.equal(supervised(1), false);

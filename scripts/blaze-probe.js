@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // A blaze's volley, measured against a player in iron with a shield: on the
 // arena server (25574 only), one blaze hovering at a set distance over a
 // netherrack floor in a carved room, a probe player standing still and
@@ -13,7 +14,7 @@ const mineflayer = require('mineflayer'); const fs = require('fs'); const path =
 const { arenaDir } = require('./lib/arena');
 const { volleyWatch, volleyDue, charged } = require('../src/blaze-stand');
 const CONSOLE = process.env.ARENA_CONSOLE || path.join(arenaDir(), 'console.in');
-const say = l => fs.appendFileSync(CONSOLE, l + '\n');
+const say = l => writeConsoleFile(CONSOLE, l + '\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const mode = process.argv[2] || 'none', distance = Number(process.argv[3] || 12), seconds = Number(process.argv[4] || 40), count = Number(process.argv[5] || 1);
 const PORT = Number(process.env.MC_PORT || 25574), UP = Number(process.env.PROBE_UP || 1);
