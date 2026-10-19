@@ -30,6 +30,14 @@ test('the gaze is left alone otherwise', () => {
   assert.equal(lowerGaze(scene({ pitch: 0.6 })), false, 'a deliberate look up at a crystal');
 });
 
+test('waiting for a player request retains the defensive gaze near endermen', () => {
+  const bot = scene(); bot._waitingForRequest = true;
+  gazePlugin(bot); bot.emit('spawn'); bot.emit('physicsTick');
+  assert.equal(bot.entity.pitch, DOWN);
+  bot._waitingForRequest = false; bot.emit('physicsTick');
+  assert.equal(bot.entity.pitch, DOWN);
+});
+
 test('a goal missing the methods the pathfinder calls every tick is made whole, a bare position becomes a block goal', () => {
   const { wholeGoal } = require('../src/skills');
   const log = console.log; const lines = []; console.log = l => lines.push(l);

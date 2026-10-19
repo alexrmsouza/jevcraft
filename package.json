@@ -26,6 +26,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "chatgpt:login": "node scripts/chatgpt.js login",
+    "chatgpt:status": "node scripts/chatgpt.js status",
+    "chatgpt:models": "node scripts/chatgpt.js models",
+    "chatgpt:verify": "node scripts/chatgpt.js verify",
+    "chatgpt:logout": "node scripts/chatgpt.js logout",
     "plan": "node scripts/try-plan.js",
     "live": "node scripts/live-test.js",
     "pretest": "node scripts/check-node.js",
@@ -43,6 +48,7 @@
   "dependencies": {
     "cross-spawn": "^7.0.6",
     "fflate": "^0.8.3",
+    "jose": "^6.2.12",
     "minecraft-data": "^3.0.0",
     "mineflayer": "^4.39.0",
     "mineflayer-pathfinder": "^2.4.5",

@@ -250,6 +250,9 @@ node -e "require('node:fs').copyFileSync('.env.example', '.env')"
 
 Set `TYPESAFE_API_KEY` in `.env` before starting the bot. The commands above work in PowerShell, Command Prompt and Unix shells.
 
+The optional [ChatGPT planner](docs/chatgpt-planner.md) has a separate sign-in
+and access check: `npm run chatgpt:login`, then `npm run chatgpt:verify`.
+
 ### Playing with Jev
 
 Point the bot at a Minecraft Java 26.1 server you run. In `.env`, set `MC_HOST` and `MC_PORT` (defaults: localhost, 25565). Leave `MC_AUTH=offline` for an offline-mode server, or use `MC_AUTH=microsoft` with a separate account for the bot. Then:

@@ -420,7 +420,17 @@ function lockBody(bot) {
 
 // One look, every tick: the warnings, the question about them, the shots
 // in the air, and the hold.
+const requestActive = (bot, epoch) => epoch === undefined || bot._requestActivityEpoch === epoch;
 function tick(bot, survival, now = Date.now()) {
+  const epoch = bot._requestActivityEpoch;
+  if (epoch !== undefined && bot._shotActivityEpoch !== epoch) {
+    const hold = bot._shotHold;
+    release(bot, now, true);
+    if (hold && bot._shotRaw) for (const key of MOVE_KEYS) bot._shotRaw.set(key, false);
+    bot._shotAnswers?.clear(); bot._shotAsked?.clear(); bot._shotFarHeld?.clear();
+    bot._shotRecentAnswer = null; bot._shotLookAt = 0;
+    bot._shotActivityEpoch = epoch;
+  }
   if (!bot.entity?.position) return;
   const carried = shieldCarried(bot);
   let shooters = [];
@@ -868,6 +878,8 @@ function recentHeld(bot, warned, now = Date.now()) {
 // bot._shotAnswers when it comes. Until it comes the reflex answers a shot
 // in the air.
 function ask(bot, survival, warned) {
+  const epoch = bot._requestActivityEpoch, active = () => requestActive(bot, epoch);
+  if (!active()) return;
   const keys = new Map(warned.map(e => [e.id, e._shotWarn.key]));
   (bot._shotAsked ||= new Set());
   for (const k of keys.values()) bot._shotAsked.add(k);
@@ -917,31 +929,38 @@ function ask(bot, survival, warned) {
   }
   const state = shotState(bot, warned);
   const goal = bot._survivalGoal || bot._goal || {}, save = bot._goalSave || (() => {});
-  const only = { get cancelled() { return false; }, label: 'shot_answer', check() {} };
+  const only = { get cancelled() { return !active(); }, label: 'shot_answer', check() {
+    if (!active()) { const error = new Error('Shot response cancelled'); error.name = 'Cancelled'; throw error; }
+  } };
   bot._shotAsking = true;
-  Promise.resolve().then(() => survival.decide(only, goal, save, { id: 'shot_answer', state, tree, aside: true }))
+  Promise.resolve().then(() => { only.check(); return survival.decide(only, goal, save, { id: 'shot_answer', state, tree, aside: true, isFresh: active }); })
     .then(d => {
+      if (!active()) return;
       const choice = d && !d.stale ? d.path?.[0] : null;
       if (!choice || !tree[choice]) return;
       record(choice, d.safetyRule ? 'rule' : 'jev');
-      if (choice === 'strike_first') strikeFirst(bot, tree.strike_first.target).catch(() => {});
+      if (choice === 'strike_first') strikeFirst(bot, tree.strike_first.target, epoch).catch(() => {});
     })
     .catch(() => null)
-    .finally(() => { bot._shotAsking = false; });
+    .finally(() => {
+      if (!active()) for (const key of keys.values()) bot._shotAsked?.delete(key);
+      bot._shotAsking = false;
+    });
 }
 // The shot's safety rule, when Jev cannot answer: the shield, or where the shooters are split round
 // the bot and a cell out of their line is a step off, that cell (note 691).
 const shotRule = tree => tree.shield_up?.split && tree.behind_cover ? 'behind_cover' : tree.shield_up ? 'shield_up' : null;
 // The strike chosen: swings at the shooter while it is in reach and its
 // warning is on, as the weapon's recharge allows.
-async function strikeFirst(bot, id) {
+async function strikeFirst(bot, id, epoch = bot._requestActivityEpoch) {
   const { canStrike } = require('./combat');
   const until = Date.now() + 4000;
-  while (Date.now() < until) {
+  while (Date.now() < until && requestActive(bot, epoch)) {
     const e = bot.entities?.[id];
     if (!e || e.isValid === false || !canStrike(bot, e)) return;
     const lookAt = bot._shotRaw?.lookAt || bot.lookAt.bind(bot);
     await lookAt(e.position.offset(0, (e.height || 1.8) / 2, 0), true);
+    if (!requestActive(bot, epoch)) return;
     bot.attack(e);
     await sleep(650);
   }

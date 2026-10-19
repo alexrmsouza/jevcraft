@@ -66,6 +66,78 @@ const faces = (bot, point) => {
 };
 const blazeMiddle = bot => { const b = Object.values(bot.entities).filter(e => e.name === 'blaze'); return b.reduce((s, e) => s.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / b.length); };
 
+test('quiet request waiting neither asks Jev nor raises a shield', async () => {
+  const { bot, calls, client } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  let questions = 0; const survival = { client: {}, decide: async () => { questions++; return { path: ['keep_on'] }; } };
+  reflex.watchShots(bot); bot.entities = {};
+  bot._waitingForRequest = true; bot._requestActivityEpoch = 1;
+  reflex.tick(bot, survival); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(questions, 0); assert.equal(calls.raised, 0); assert.deepEqual(calls.looks, []);
+});
+
+test('a shooter warning and incoming shots retain reactive defense during request waiting', async () => {
+  const { bot, calls, client } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  let questions = 0; const survival = { client: {}, decide: async () => { questions++; return { path: ['keep_on'] }; } };
+  reflex.watchShots(bot); spawnShots(bot, client); bot.entities[775].metadata[BLAZE_FLAGS] = 1;
+  bot._waitingForRequest = true; bot._requestActivityEpoch = 1;
+  reflex.tick(bot, survival); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(questions, 1); assert.equal(calls.raised, 1);
+  assert(bot._shotHold);
+});
+
+test('entering quiet request wait releases an earlier shield hold and its movement keys', () => {
+  const { bot, calls, client } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  bot._requestActivityEpoch = 1;
+  reflex.watchShots(bot); spawnShots(bot, client); reflex.tick(bot, null);
+  assert.equal(calls.raised, 1);
+  bot.controlState.forward = true; bot._waitingForRequest = true; bot._requestActivityEpoch++;
+  bot._shots.clear(); bot.entities = {};
+  reflex.tick(bot, null);
+  assert.equal(bot._shotHold, null); assert.equal(calls.lowered, 1);
+  assert.equal(bot.controlState.forward, false);
+});
+
+test('a stop before the warning question microtask prevents a new Jev call', async () => {
+  const { bot } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  let questions = 0;
+  bot._waitingForRequest = false; bot._requestActivityEpoch = 1;
+  bot.entities[775].metadata[BLAZE_FLAGS] = 1;
+  reflex.tick(bot, { client: {}, decide: async () => { questions++; return { path: ['keep_on'] }; } });
+  bot._waitingForRequest = true; bot._requestActivityEpoch++;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(questions, 0);
+});
+
+for (const resumeBeforeAnswer of [false, true]) test(`a warning answer after stop is discarded${resumeBeforeAnswer ? ' even after another task starts' : ''}`, async () => {
+  const { bot } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  let resolveAnswer, task;
+  bot._waitingForRequest = false; bot._requestActivityEpoch = 1;
+  bot.entities[775].metadata[BLAZE_FLAGS] = 1;
+  reflex.tick(bot, { client: {}, decide: pending => { task = pending; return new Promise(resolve => { resolveAnswer = resolve; }); } });
+  await new Promise(resolve => setImmediate(resolve)); assert(resolveAnswer);
+  bot._waitingForRequest = true; bot._requestActivityEpoch++;
+  if (resumeBeforeAnswer) { bot._waitingForRequest = false; bot._requestActivityEpoch++; }
+  assert.equal(task.cancelled, true);
+  resolveAnswer({ path: ['keep_on'] }); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(bot._shotAnswers.size, 0);
+});
+
+test('a stop while a chosen strike awaits its look prevents the attack after the look resolves', async () => {
+  const { bot } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  const blaze = bot.entities[775]; blaze.position = bot.entity.position.offset(2, 0, 0);
+  blaze._shotWarn = { key: 'fixture-warning', at: Date.now(), kind: 'blaze' };
+  let releaseLook, attacks = 0;
+  bot._waitingForRequest = false; bot._requestActivityEpoch = 1;
+  bot.attack = () => { attacks++; };
+  bot.lookAt = () => new Promise(resolve => { releaseLook = resolve; });
+  reflex.ask(bot, { client: {}, decide: async () => ({ path: ['strike_first'] }) }, [blaze]);
+  await new Promise(resolve => setImmediate(resolve)); assert(releaseLook);
+  bot._waitingForRequest = true; bot._requestActivityEpoch++;
+  releaseLook(); await new Promise(resolve => setImmediate(resolve));
+  blaze.isValid = false;
+  assert.equal(attacks, 0);
+});
+
 test('25589 18:48:19.334, the work stalking with its back to six blazes and ten fireballs in the air: the shield comes up toward them and the walk waits', () => {
   const { bot, calls, client } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
   reflex.watchShots(bot);
