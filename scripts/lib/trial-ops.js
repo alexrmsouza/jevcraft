@@ -13,10 +13,11 @@ function safePath(base, file) {
   base = path.resolve(base); file = path.resolve(file);
   const relative = path.relative(base, file);
   if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`path must be a descendant of ${base}: ${file}`);
-  // Check the allowlist root and every ancestor, including junctions on Windows.
-  let current = path.parse(base).root;
-  for (const part of path.relative(current, file).split(path.sep)) {
-    current = path.join(current, part);
+  // The managed root and its descendants must not be links. Ancestors above
+  // that boundary may be OS aliases (macOS /var) or user directory junctions.
+  let current = base;
+  for (const part of ['', ...relative.split(path.sep)]) {
+    if (part) current = path.join(current, part);
     try { if (fs.lstatSync(current).isSymbolicLink()) throw new Error(`symbolic link in managed path: ${current}`); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }

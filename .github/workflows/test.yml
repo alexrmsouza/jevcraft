@@ -34,9 +34,9 @@ jobs:
       - run: npm ci
       - run: npm run check:portability
       - if: runner.os == 'Windows'
-        run: npm --script-shell=cmd.exe test
+        run: npm --script-shell=cmd.exe test -- --test-concurrency=8 --test-reporter=spec
       - if: runner.os != 'Windows'
-        run: npm test
+        run: npm test -- --test-concurrency=8 --test-reporter=spec
 
   # Live Jev evals need a TypeSafe key. They run on main only, and only when
   # the repository has one configured, so forks and pull requests stay green

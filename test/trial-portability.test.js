@@ -70,6 +70,24 @@ test('checkpoint pruning rejects path escapes and does not traverse directory sy
   assert.equal(fs.readFileSync(path.join(outside, 'keep'), 'utf8'), 'untouched');
 });
 
+test('managed paths accept symlink ancestors above the base but reject a linked base or descendant', t => {
+  const parent = fixture(t), actual = fixture(t), outside = fixture(t);
+  const alias = path.join(parent, 'alias');
+  fs.symlinkSync(actual, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  fs.mkdirSync(path.join(actual, 'managed'));
+  const base = path.join(alias, 'managed'), file = put(base, 'world/level.dat', 'owned');
+  const { safePath, safeRemove } = require('../scripts/lib/trial-ops');
+  assert.equal(safePath(base, file), file, 'an OS path alias such as macOS /var must preserve the lexical path');
+  safeRemove(base, path.dirname(file));
+  assert.equal(fs.existsSync(path.join(actual, 'managed/world')), false);
+  assert.throws(() => safePath(alias, path.join(alias, 'managed/file')), /symbolic|symlink|link/i, 'the managed base itself may not be a link');
+  fs.symlinkSync(outside, path.join(base, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
+  put(outside, 'keep', 'untouched');
+  assert.throws(() => safeRemove(base, path.join(base, 'linked/keep')), /symbolic|symlink|link/i);
+  assert.throws(() => safeRemove(base, path.join(base, '../elsewhere')), /outside|escape|descendant/i);
+  assert.equal(fs.readFileSync(path.join(outside, 'keep'), 'utf8'), 'untouched');
+});
+
 test('spectator commands touch only the named watcher and notice log resets', async t => {
   const root = fixture(t), log = put(root, '.clean-run-25582/logs/latest.log', 'Alex joined the game\n');
   put(root, '.clean-run-25582/server.properties', 'server-port=25582\n');
