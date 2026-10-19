@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { navigate, surveyRoute } = require('./skills');
@@ -619,10 +621,13 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   const flat = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z);
   goal.step = { action: 'cross_sea', toward: { x: target.x, z: target.z }, land: target.biome, from: { ...start.floored() } }; save();
   const heading = Math.abs(target.x - start.x) > Math.abs(target.z - start.z) ? (target.x < start.x ? 'west' : 'east') : (target.z < start.z ? 'north' : 'south');
-  bot.chat?.(target.key === 'stronghold' ? `No land in sight. Swimming on for where the eyes point, ${Math.round(flat())} blocks ${heading}.`
+  const direction = { north: 'norte', south: 'sul', east: 'leste', west: 'oeste' }[heading];
+  const destination = target.key === 'stronghold' ? 'o lugar indicado pelos olhos de ender' : target.key === 'home' ? 'a base' : displayName(target.biome, bot);
+  notify(bot, target.key === 'stronghold' ? `No land in sight. Swimming on for where the eyes point, ${Math.round(flat())} blocks ${heading}.`
     : target.key === 'home' ? `No land in sight. Swimming for home, ${Math.round(flat())} blocks ${heading}.`
     : target === toward ? `No land in sight. Swimming for the ${target.biome} I saw, ${Math.round(flat())} blocks ${heading}.`
-      : `No land in sight. Swimming for the ${target.biome} I walked, ${Math.round(flat())} blocks ${heading}.`);
+      : `No land in sight. Swimming for the ${target.biome} I walked, ${Math.round(flat())} blocks ${heading}.`,
+    `Não vejo terra por perto. Vou nadar em direção a ${destination}, a ${Math.round(flat())} blocos ao ${direction}.`);
   // Off the pillar and into the sea: the nearest open water toward the land.
   if (!inWater(bot)) {
     const feet = start.floored(), cells = [];

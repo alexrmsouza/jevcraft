@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // Getting unstuck, one move at a time, chosen by Jev. The escape routines
 // grew one per trap (a step placed at the waterline, a notch cut in the
 // bank, a staircase, a lid dug, a pillar), each with its own order and its
@@ -1173,7 +1174,8 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   const startFeet = bot.entity.position.floored();
   if (spellRests(goal, startFeet)) record.windowFrom = Date.now();
   if (!Number.isFinite(record.startMeasure)) record.startMeasure = measureOf(aim, startFeet);
-  bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
+  notify(bot, `Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`,
+    `Estou preso. Vou tentar ${aim.goal === 'dry' ? 'sair da água' : aim.goal === 'away' ? 'sair deste lugar' : 'subir'} um movimento de cada vez.`, 'important');
   // At the fight for the rods by a spawner, the cage is what the work is
   // there for: each move says where it leaves the bot against it (note 700).
   const fight = (() => { try { return require('./cage-hold').cageFight(bot, goal); } catch (_) { return null; } })();

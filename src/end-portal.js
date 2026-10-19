@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { portalAt } = require('./stronghold');
@@ -280,7 +281,7 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
     }
     if (!activePortal(bot, center)) throw blocked('Filled frames have not produced nine observed active End portal blocks');
     if (fillOnly) {
-      if (!goal.endPortal.litAt) { goal.endPortal.litAt = Date.now(); save(); bot.chat?.('The End portal is lit. The kit for the End next.'); }
+      if (!goal.endPortal.litAt) { goal.endPortal.litAt = Date.now(); save(); notify(bot, 'The End portal is lit. The kit for the End next.', 'O portal do End está ativo. Agora vou preparar o equipamento para entrar.', 'important'); }
       return;
     }
     // Approach a cardinal edge. The final short crossing intentionally enters

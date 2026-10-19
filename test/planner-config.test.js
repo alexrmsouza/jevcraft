@@ -40,3 +40,11 @@ test('invalid chat mode fails before authentication or connecting Minecraft', as
   await assert.rejects(configuredPlanner({ env: { JEV_PLANNER: 'chatgpt', JEV_CHAT_MODE: 'typo' },
     auth: { getAccessToken: () => { throw Error('Unexpected authentication'); } } }), /JEV_CHAT_MODE/);
 });
+
+for (const provider of ['jev', 'chatgpt']) for (const [key, value] of [['JEV_LANGUAGE', 'xx'], ['JEV_NARRATION', 'verbose']]) {
+  test(`invalid ${key} fails preflight before ${provider} authentication`, async () => {
+    let calls = 0;
+    await assert.rejects(configuredPlanner({ env: { JEV_PLANNER: provider, [key]: value }, auth: { getAccessToken: () => { calls++; throw Error('Unexpected authentication'); } } }), new RegExp(key));
+    assert.equal(calls, 0);
+  });
+}

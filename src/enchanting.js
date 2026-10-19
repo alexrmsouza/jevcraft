@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 // Enchanting: the table (a book, four obsidian, two diamonds), lapis, and
 // the experience the run earns anyway from ore, smelting and mobs. Without
 // bookshelves the table offers up to level eight: Sharpness or Protection
@@ -108,7 +110,8 @@ async function enchantStep(bot, task, goal, save, { workstation }) {
   if (next.worn && done) await bot.equip(done, next.worn);
   const names = enchantsOf(done).map(e => `${e.name.replaceAll('_', ' ')} ${e.lvl}`);
   state.done.push({ item: next.item.name, at: new Date().toISOString(), cost, enchants: names }); save();
-  bot.chat?.(`Enchanted my ${next.item.name.replaceAll('_', ' ')}${names.length ? `: ${names.join(', ')}` : ''}.`);
+  const translated = enchantsOf(done).map(e => `${displayName(e.name, bot)} ${e.lvl}`);
+  notify(bot, `Enchanted my ${next.item.name.replaceAll('_', ' ')}${names.length ? `: ${names.join(', ')}` : ''}.`, `Encantei ${displayName(next.item.name, bot)}${translated.length ? `: ${translated.join(', ')}` : ''}.`, 'important');
   return true;
 }
 

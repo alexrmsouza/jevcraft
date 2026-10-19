@@ -10,6 +10,7 @@ const { resolveItemBundle } = require('./item-bundle');
 const { resolveDiscovery } = require('./discovery');
 const { resolveMemory } = require('./memory-routing');
 const { woodChoices, requestedPreferences, preferenceContext } = require('./preferences');
+const { localize, displayName } = require('./language');
 
 // The questions, their bars and the request types are defined in
 // decisions/intake.js; CONFIDENCE is kept as a view of those bars.
@@ -23,6 +24,12 @@ const PHRASES = {
   stop: 'stop', status: 'report what I am doing', resume: 'resume the saved task', other: 'just talk',
 };
 const phrase = kind => PHRASES[kind] || String(kind).replaceAll('_', ' ');
+const PORTUGUESE_PHRASES = {
+  memory: 'lembrar de algo', dream: 'mudar meu sonho', operator_command: 'executar um comando do servidor', house: 'construir uma casa pequena',
+  build: 'planejar e construir algo', obtain: 'conseguir um item', craft: 'fabricar um item', find: 'encontrar algo no mundo',
+  come: 'ir até você', follow: 'seguir você', nether: 'encontrar um caminho para o Nether', win: 'começar a vencer o jogo',
+  stop: 'parar', status: 'contar o que estou fazendo', resume: 'retomar a tarefa salva', other: 'conversar',
+};
 
 // Candidate extraction is exact code; Jev selects which mentioned quantity
 // applies to the requested output. Never offer unrelated batch sizes.
@@ -50,6 +57,8 @@ function quantityCandidates(request) {
 }
 
 async function interpret(client, request, from, username, context = {}) {
+  const say = (english, portuguese) => localize(context.language, english, portuguese);
+  const describe = kind => PORTUGUESE_PHRASES[kind] || phrase(kind);
   const address = parseAddress(request, username);
   const numbers = quantityCandidates(address.text);
   const registry = context.registry || require('minecraft-data')('26.1');
@@ -110,8 +119,8 @@ async function interpret(client, request, from, username, context = {}) {
   const confidence = a.objective.confidence;
   if (!UNGATED.has(kind) && Number.isFinite(confidence) && confidence < (COSTLY.has(kind) ? CONFIDENCE.costly : CONFIDENCE.act)) {
     const runnerUp = Object.entries(a.objective.probabilities || {}).filter(([key]) => key !== kind && Object.hasOwn(TYPES, key)).sort(([, x], [, y]) => y - x)[0]?.[0];
-    return clarify(runnerUp ? `I'm not sure whether you want me to ${phrase(kind)} or ${phrase(runnerUp)}. Could you say it another way?`
-      : `I'm not sure what you want me to do. Could you say it another way?`,
+    return clarify(runnerUp ? say(`I'm not sure whether you want me to ${phrase(kind)} or ${phrase(runnerUp)}. Could you say it another way?`, `Não sei se o pedido é para eu ${describe(kind)} ou ${describe(runnerUp)}. Pode explicar de outro jeito?`)
+      : say(`I'm not sure what you want me to do. Could you say it another way?`, 'Não entendi o que você quer que eu faça. Pode explicar de outro jeito?'),
     { reason: 'uncertain_objective', question: 'objective', confidence, threshold: COSTLY.has(kind) ? CONFIDENCE.costly : CONFIDENCE.act, options: [kind, runnerUp].filter(Boolean) });
   }
   // Whether anything should happen at all is a judgment too. A bare
@@ -120,7 +129,7 @@ async function interpret(client, request, from, username, context = {}) {
   // the same surer answer on this question as on the objective.
   const asked = a.interaction.confidence;
   if (kind === a.objective.choice && !UNGATED.has(kind) && COSTLY.has(kind) && Number.isFinite(asked) && asked < CONFIDENCE.costly) {
-    return clarify(`Do you want me to ${phrase(kind)} now, or were we just talking about it?`,
+    return clarify(say(`Do you want me to ${phrase(kind)} now, or were we just talking about it?`, `É para eu ${describe(kind)} agora ou estávamos apenas conversando sobre isso?`),
       { reason: 'uncertain_interaction', question: 'interaction', confidence: asked, threshold: CONFIDENCE.costly, options: [kind] });
   }
   const preferences = requestedPreferences(kind, a.wood_choice, woods);
@@ -156,12 +165,12 @@ async function interpret(client, request, from, username, context = {}) {
   if (kind === 'find') {
     const category = ['biome', 'entity', 'block', 'none'].includes(a.discovery_category?.choice) ? a.discovery_category : undefined;
     const resolution = await resolveDiscovery(client, registry, request, { category });
-    if (!resolution.target) return clarify('Which Minecraft biome, creature, or block should I look for?', { reason: 'no_discovery_target' });
+    if (!resolution.target) return clarify(say('Which Minecraft biome, creature, or block should I look for?', 'Qual bioma, criatura ou bloco do Minecraft devo procurar?'), { reason: 'no_discovery_target' });
     spec.discoveryTarget = resolution.target; spec.discoveryResolution = resolution;
   }
   if (['obtain', 'craft'].includes(kind) && a.outputs?.choice === 'multiple') {
     const resolution = await resolveItemBundle(client, registry, request, numbers, { inventory: context.inventory || {}, memory: context.memory });
-    if (!resolution.items.length) return clarify('I could not resolve the whole item list. Please name the items or armor material so I can keep every part of your request.', { reason: 'incomplete_bundle' });
+    if (!resolution.items.length) return clarify(say('I could not resolve the whole item list. Please name the items or armor material so I can keep every part of your request.', 'Não consegui identificar toda a lista. Informe os itens ou o material da armadura para eu manter todas as partes do pedido.'), { reason: 'incomplete_bundle' });
     return { ...spec, kind: 'bundle', tasks: resolution.items.map(item => ({ ...item, from, status: 'pending' })), itemResolution: resolution };
   }
   if (['obtain', 'craft'].includes(kind) || (kind === 'house' && (a.material?.choice === 'other' || context.memory?.notes?.length || context.memory?.preferences?.length))) {
@@ -177,9 +186,9 @@ async function interpret(client, request, from, username, context = {}) {
     spec.itemResolution = resolution;
     if (resolution.ambiguous) {
       const [first, second] = resolution.ambiguous.map(name => name.replaceAll('_', ' '));
-      return clarify(`Did you mean ${first} or ${second}?`, { reason: 'ambiguous_item', options: resolution.ambiguous });
+      return clarify(say(`Did you mean ${first} or ${second}?`, `Você quis dizer ${displayName(resolution.ambiguous[0], context.language)} ou ${displayName(resolution.ambiguous[1], context.language)}?`), { reason: 'ambiguous_item', options: resolution.ambiguous });
     }
-    if (!resolution.item) return clarify('I could not match the requested item. Use its Minecraft item name so I can work out the recipe.', { reason: 'no_item' });
+    if (!resolution.item) return clarify(say('I could not match the requested item. Use its Minecraft item name so I can work out the recipe.', 'Não consegui identificar o item. Use o nome dele no Minecraft para eu encontrar a receita.'), { reason: 'no_item' });
     if (kind === 'house') spec.material = resolution.item;
     else {
       if (![...numbers, 'unspecified'].includes(a.quantity?.choice)) throw new Error('Invalid item quantity');

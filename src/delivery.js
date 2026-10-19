@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 
 const { goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
@@ -131,7 +132,7 @@ async function deliver(bot, task, goal, save, { timeout = 12000 } = {}) {
       task.check();
       if (error.code !== 'HANDOVER_SPACE') throw error;
       goal.deliveryMode = 'chest'; save();
-      bot.chat?.("It's hard to hand you things here. I'll put them in a chest nearby.");
+      notify(bot, "It's hard to hand you things here. I'll put them in a chest nearby.", 'Está difícil entregar os itens aqui. Vou deixá-los em um baú por perto.', 'important');
       return await require('./chest-delivery').deliverToChest(bot, task, goal, save);
     }
   }

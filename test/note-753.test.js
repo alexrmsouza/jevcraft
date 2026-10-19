@@ -175,10 +175,28 @@ test('a pool arrived at with no lava of its own is spent, whatever other lava is
 });
 
 test('the nether_first chat says what it does, not "Before the diamond sword, I\'ll leave the diamond sword for later" (25592, note 753)', async () => {
-  // The line is built from the option (strategy.js netherFirst): its chat.
-  const src = require('fs').readFileSync(require.resolve('../src/strategy'), 'utf8');
-  assert.match(src, /chat: `I'll leave the \$\{left\.map\(label\)\.join\(' and the '\)\} for later and go for the Nether now\.`/);
-  assert.match(src, /bot\.chat\?\.\(options\[choice\]\.chat \? options\[choice\]\.chat :/);
+  const { strategyStep } = require('../src/strategy');
+  const equipment = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket',
+    'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'bow'];
+  for (const [language, narration] of [['en-US', 'full'], ['pt-BR', 'full'], ['en-US', 'off']]) {
+    const messages = [], at = Date.now();
+    const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 1000 },
+      health: 20, food: 20, isAlive: true, entity: { position: new Vec3(.5, 64, .5) },
+      inventory: { items: () => equipment.map(name => ({ name, count: 1 })).concat({ name: 'arrow', count: 16 }) },
+      _jevLanguage: language, _jevNarration: narration, chat: message => messages.push(message) };
+    const goal = { kind: 'win', request: 'beat the game', rungOptIn: { diamond_sword: at } };
+    const result = await strategyStep(bot, new Task('win'), goal, () => {},
+      { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, {
+        now: () => at, decide: async (_id, { tree }) => { assert.ok(tree.nether_first); return { path: ['nether_first'] }; },
+      });
+    assert.equal(result.replan, true);
+    if (narration === 'off') assert.deepEqual(messages, []);
+    else {
+      assert.equal(messages.length, 1);
+      assert.doesNotMatch(messages[0], /^Before /);
+      assert.match(messages[0], language === 'en-US' ? /I'll leave .* for later and go for the Nether now\./ : /seguir para o Nether agora/);
+    }
+  }
 });
 
 test('the progress audit counts no blocks dug or laid for a stack that leaves the record and comes back within seconds (25581, 11:43-11:58Z, note 753)', () => {

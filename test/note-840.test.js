@@ -12,10 +12,11 @@ test('25595 (21:50:26Z): work chosen over survival with a skeleton 16 off leaves
   let tree = null;
   const decide = async (id, o) => { tree = o.tree; return { path: ['work'] }; };
   const bot = fakeBot();
-  const out = await arbiter.arbitrate(bot, [claim('work', 'food_near_frame'), claim('survival', 'escape_threat')], { state: {}, decide, mobs: [skeleton] });
+  const now = 1000000;
+  const out = await arbiter.arbitrate(bot, [claim('work', 'food_near_frame'), claim('survival', 'escape_threat')], { state: {}, decide, mobs: [skeleton], now });
   assert.equal(out.winner.layer, 'work');
   assert.deepEqual(bot._wavedOff?.ids, [3590]);
-  assert(bot._wavedOff.until - Date.now() > 14000);
+  assert.equal(bot._wavedOff.until - now, 15000);
   assert.match(tree.work.description.does, /Chosen over survival's answer to the mobs about, they are left be for 15 seconds as the encounter's keep_working leaves them/);
   const bot2 = fakeBot();
   await arbiter.arbitrate(bot2, [claim('work', 'food_near_frame'), claim('survival', 'escape_threat')], { state: {}, decide: async () => ({ path: ['survival'] }), mobs: [skeleton] });

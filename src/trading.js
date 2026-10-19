@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 // Trading with villagers. Emeralds come from what the run has to spare
 // (coal by the hundred, sticks, wheat, rotten flesh, paper, iron, leather,
 // string) and go on what the run needs: ender pearls from a cleric, arrows
@@ -119,7 +121,8 @@ async function makeTrade(bot, task, goal, save, option, { navigate }) {
   delete state.offers[idOf(v)]; // prices and stock change with a trade
   save();
   const phrase = i => `${i.count} ${i.name.replaceAll('_', ' ')}`;
-  bot.chat?.(got > 0 ? `Traded ${phrase(option.input)}${option.input2 ? ` and ${phrase(option.input2)}` : ''} for ${phrase({ name: option.output.name, count: got })}.` : 'The trade did not go through.');
+  const translated = item => `${item.count} ${displayName(item.name, bot)}`;
+  notify(bot, got > 0 ? `Traded ${phrase(option.input)}${option.input2 ? ` and ${phrase(option.input2)}` : ''} for ${phrase({ name: option.output.name, count: got })}.` : 'The trade did not go through.', got > 0 ? `Troquei ${translated(option.input)}${option.input2 ? ` e ${translated(option.input2)}` : ''} por ${translated({ name: option.output.name, count: got })}.` : 'A troca não foi concluída.', 'important');
   return got > 0;
 }
 

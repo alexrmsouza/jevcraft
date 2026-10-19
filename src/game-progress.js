@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 const { DAY } = require('./day');
 const { barterReady, barterGold, bastionKnown } = require('./bartering');
 const { isSetAside, setAside, attemptsFor } = require('./progress');
@@ -1307,7 +1308,7 @@ async function gameStep(bot, task, goal, save, actions) {
         if (!decision.stale) {
           const pick = decision.path.at(-1);
           search.spare = { pick, at: Date.now(), ...(pick === 'throw_one' ? { target: held - 1 } : {}) }; save();
-          if (pick === 'throw_one') { bot.chat?.(`One of my ${held} eyes for the second bearing, then.`); stage = nextGameStage(bot, goal); }
+          if (pick === 'throw_one') { notify(bot, `One of my ${held} eyes for the second bearing, then.`, `Vou usar um dos meus ${held} Olhos do Ender para medir a segunda direção.`); stage = nextGameStage(bot, goal); }
         }
       }
     }

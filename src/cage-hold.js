@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // The fight at the cage (note 700): the blaze rods the work in hand and a
 // live spawner within sixteen blocks, where it makes blazes while the bot
 // stays. Being there is the plan, not the bot standing still.
@@ -263,7 +264,8 @@ function stallAnswers(bot, task, goal, save, fight, { dig, now = Date.now(), nav
   const slit = slitOption(bot, task, goal, save, fight, { dig, about });
   if (slit) out.open_slit = slit;
   out.stay_and_fight = { description: `Stay here, ${fight.off} blocks from the cage, a minute and fight what comes.${clock ? ` ${clock}.` : ''}${about}${cap ? ` ${cap}` : ''} ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed.${last}`,
-    run: async () => { bot.chat?.(`Staying at the spawner to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`); beginHold(bot, goal, save, 'stay_and_fight'); } };
+    run: async () => { notify(bot, `Staying at the spawner to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`,
+      `Vou ficar no gerador para lutar: ainda preciso de ${fight.need} vara${fight.need === 1 ? '' : 's'} de blaze.`); beginHold(bot, goal, save, 'stay_and_fight'); } };
   // The rods already made are in the blazes already out, most of them
   // behind rock while the cap holds none more back: a line to the nearest
   // one, on foot, is the way on the cap itself does not offer.
@@ -274,7 +276,7 @@ function stallAnswers(bot, task, goal, save, fight, { dig, now = Date.now(), nav
     if (nearest) {
       const p = nearest.entity.position.floored();
       out.go_to_blaze_about = { description: `Go to the nearest blaze already out, ${mh.blazesAboutSays(known)}, on foot, one at a time: the fight there is asked as it is met.${cap ? ` ${cap}` : ''}`,
-        run: async () => { bot.chat?.('Going to a blaze already out, not waiting on the cage for more.');
+        run: async () => { notify(bot, 'Going to a blaze already out, not waiting on the cage for more.', 'Vou até um blaze que já apareceu, em vez de esperar o gerador criar outros.');
           try { await navigate(bot, task, new (require('mineflayer-pathfinder').goals.GoalNear)(p.x, p.y, p.z, 3), { timeoutMs: 20000, stallMs: 5000 }); } catch (err) { task.check(); } } };
     }
   }
@@ -306,7 +308,8 @@ function slitOption(bot, task, goal, save, fight, { dig, about = null } = {}) {
   const rangeSays = inRange ? ' It is inside the spawner\'s own spawn range (up to four blocks across): a blaze can spawn already at the wall behind the slit, not only come into the line dug through it.' : '';
   return { ...planNode(), description: `Open a slit toward the cage: dig ${slit.cells.length === 1 ? 'the block' : `the ${slit.cells.length} blocks`} on the line from the eyes to it (${slit.says}), then stay a minute and fight what comes into that line.${then}${rangeSays}${about}`,
     run: async () => {
-      bot.chat?.(`Opening a slit toward the spawner and staying to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`);
+      notify(bot, `Opening a slit toward the spawner and staying to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`,
+        `Vou abrir uma fresta em direção ao gerador e ficar para lutar: ainda preciso de ${fight.need} vara${fight.need === 1 ? '' : 's'} de blaze.`);
       for (const x of slit.cells) { task.check(); await dig(bot, task, x.cell, { requireDrops: false }); }
       beginHold(bot, goal, save, 'open_slit', Date.now(), { openings: slit.cells.map(x => x.cell) });
     } };
@@ -392,7 +395,8 @@ function pullBackOption(bot, task, goal, save, fight, { navigate = null, now = D
     `${within16.length} blazes are within 16 (${unseen} out of sight); ${atCap} of them within the spawner's own range of the cage, which it caps at ${cap}${atCap >= cap ? ': at its cap it makes none more' : ''}; the other ${within16.length - atCap} are blazes it already made that drifted off, and each shoots whenever it sees the bot. By the game's rules: past 16 of the cage the spawner makes none and its delay stops; a blaze shoots only with a line to the bot; a monster with no player within 32 blocks for 30 seconds is removed at random, one chance in 800 a tick (about half within another 28 seconds, about nine in ten within 90), so ${site.far ? 'waiting there thins the stack' : 'the stack stays while the bot is within 32 of them'}. ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed: none meanwhile.`;
   return { description, secs,
     run: async () => {
-      bot.chat?.(`Too many blazes stacked here (${within16.length}): pulling back out of their sight for a minute or so.`);
+      notify(bot, `Too many blazes stacked here (${within16.length}): pulling back out of their sight for a minute or so.`,
+        `Tem blazes demais aqui (${within16.length}). Vou recuar para fora da vista deles por cerca de um minuto.`, 'important');
       const { goals } = require('mineflayer-pathfinder');
       goal.step = { action: 'pull_back_from_spawner', target: { x: site.cell.x, y: site.cell.y, z: site.cell.z }, blazes: within16.length, health: bot.health }; save?.();
       // Its own blocks on the way dug first, a cell at a time (the walk

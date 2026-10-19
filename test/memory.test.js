@@ -9,6 +9,34 @@ const { Task } = require('../src/skills');
 const { interpret } = require('../src/objectives');
 const fixture = t => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-memory-')); t.after(() => fs.rmSync(dir, { recursive: true })); return path.join(dir, 'world-memory.json'); };
 
+test('memory replies follow language while preserving player notes, place labels and internal state', t => {
+  const memory = new CompanionMemory(fixture(t)), options = { language: 'pt-BR' };
+  const handle = value => memory.handle({ from: 'Alex', memory: value }, options);
+  assert.equal(handle({ operation: 'remember_note', note: 'Keep this English note' }), 'Vou me lembrar disso.');
+  const note = memory.context('Alex').notes[0]; assert.equal(handle({ operation: 'recall', targetId: note.id }), 'Você me disse: Keep this English note');
+  assert.match(handle({ operation: 'remember_place', label: 'Home Base', location: { position: { x: 1, y: 64, z: 2 }, dimension: 'overworld' } }), /Vou me lembrar de Home Base/);
+  const place = memory.context('Alex').places[0]; assert.match(handle({ operation: 'recall', targetId: place.id }), /Home Base.*salvo.*Superfície/);
+  memory.recordGoal({ from: 'Alex', request: 'Get my diamond_sword', kind: 'obtain', item: 'diamond_sword', count: 1, status: 'complete' });
+  const goal = memory.context('Alex').history[0]; assert.match(handle({ operation: 'recall', targetId: goal.id }), /Concluí: Get my diamond_sword/);
+  assert.match(handle({ operation: 'recall', targetId: 'all' }), /Lembro de 1 lugar, 1 nota/);
+  assert.equal(handle({ operation: 'forget', targetId: note.id }), 'Esqueci isso.');
+  assert.equal(place.label, 'Home Base'); assert.equal(goal.status, 'complete'); assert.equal(goal.intent.item, 'diamond_sword');
+});
+
+test('Portuguese memory world summaries do not append an English exploration sentence', t => {
+  const memory = new CompanionMemory(fixture(t));
+  const reply = memory.handle({ from: 'Alex', memory: { operation: 'recall', targetId: 'all' } }, { language: 'pt-BR', world: { explored: { 'overworld:0,0': {} }, villages: [{ x: 0, y: 64, z: 0, dimension: 'overworld' }] } });
+  assert.match(reply, /Ainda não salvei/); assert.match(reply, /Explorei 1 área e encontrei 1 lugar/); assert(!reply.includes("I've"));
+});
+
+test('Portuguese memory routing clarifications keep permissions and decision keys unchanged', async () => {
+  for (const operation of ['none', 'forget']) {
+    const client = { systemOne: async () => ({ answers: { operation: { choice: operation, confidence: 0.1 } } }) };
+    const spec = await resolveMemory(client, { request: 'Jev remember something', from: 'Alex' }, 'Jev', { language: 'pt-BR' });
+    assert.equal(spec.kind, 'clarify'); assert.match(spec.message, operation === 'none' ? /Você pode pedir/ : /esqueça/); assert(!spec.message.includes('Do you'));
+  }
+});
+
 test('places and notes survive a restart, remain player/world scoped, and accept corrections', t => {
   const file = fixture(t), memory = new CompanionMemory(file);
   const home = memory.rememberPlace('Alex', 'home', { x: 12, y: 64, z: -7 }, 'minecraft:overworld');

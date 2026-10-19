@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { formatItems } = require('./language');
 // The chests the world leaves lying about. A ruined portal's chest holds
 // gold, obsidian, flint and steel and now and then a golden apple; a
 // dungeon's and a temple's, iron, gold, bread, diamonds, string, gunpowder.
@@ -215,7 +217,7 @@ async function lootChest(bot, task, goal, save, position, { approach, open, now 
   markLandmarkLooted(bot, goal, now);
   save();
   const where = structure ? `the ${structure.kind.replaceAll('_', ' ')}'s chest` : 'a chest';
-  bot.chat?.(Object.keys(took).length ? `Opened ${where}: ${phraseTaken(took)}.` : `Opened ${where}; nothing in it I can use.`);
+  notify(bot, Object.keys(took).length ? `Opened ${where}: ${phraseTaken(took)}.` : `Opened ${where}; nothing in it I can use.`, Object.keys(took).length ? `Abri um baú e peguei ${formatItems(took, bot)}.` : 'Abri um baú; não há nada que eu possa usar.', 'important');
   return true;
 }
 
@@ -230,7 +232,7 @@ async function lootMinecart(bot, task, goal, save, cart, { navigate, openEntity 
   (goal.looted ||= {})[cartKey(cart)] = { at: now, structure: 'mineshaft', position: plain(p), took, left };
   markLandmarkLooted(bot, goal, now);
   save();
-  bot.chat?.(Object.keys(took).length ? `Opened a minecart chest in the mineshaft: ${phraseTaken(took)}.` : 'Opened a minecart chest in the mineshaft; nothing in it I can use.');
+  notify(bot, Object.keys(took).length ? `Opened a minecart chest in the mineshaft: ${phraseTaken(took)}.` : 'Opened a minecart chest in the mineshaft; nothing in it I can use.', Object.keys(took).length ? `Abri um carrinho com baú na mina e peguei ${formatItems(took, bot)}.` : 'Abri um carrinho com baú na mina; não há nada que eu possa usar.', 'important');
   return true;
 }
 

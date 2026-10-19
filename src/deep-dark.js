@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 // Underground expeditions: down by staircase to a structure's depth, swept
 // at that depth in legs until it shows, then through it. The user,
 // 2026-09-23: the run had gone quiet, walking about after endermen, and
@@ -93,7 +95,7 @@ async function openVault(bot, task, goal, save, actions, site) {
   await bot.equip(key, 'hand');
   await bot.activateBlock(bot.blockAt(vault));
   used[`${vault.x},${vault.y},${vault.z}`] = new Date().toISOString(); save();
-  bot.chat?.('Opened a vault with a trial key.');
+  notify(bot, 'Opened a vault with a trial key.', 'Abri um cofre com uma chave do desafio.', 'important');
   return true;
 }
 
@@ -114,7 +116,7 @@ async function expeditionStep(bot, task, goal, save, actions, kind = 'deep_dark'
   if (x.warden && wardenNear(bot)) {
     setAside(goal, kind, 'trip', 'a warden in sight', WARDEN_REST_MS);
     state.wardenAt = new Date().toISOString(); save();
-    bot.chat?.('A warden. Leaving the deep dark for now.');
+    notify(bot, 'A warden. Leaving the deep dark for now.', `${displayName('warden', bot)} por perto. Vou sair das profundezas por enquanto.`, 'important');
     return 'warden';
   }
   actions.notice?.(bot, goal, save);
@@ -122,7 +124,7 @@ async function expeditionStep(bot, task, goal, save, actions, kind = 'deep_dark'
   const site = (goal.landmarks || []).filter(l => l.kind === x.landmark && !l.lootedAt && /overworld/.test(String(l.dimension || 'overworld')))
     .sort((a, b) => flat(a, here) - flat(b, here))[0];
   if (site) {
-    if (!state.foundAt) { state.foundAt = new Date().toISOString(); bot.chat?.(`The ${x.site} at ${site.x}, ${site.y}, ${site.z}. Going through it.`); }
+    if (!state.foundAt) { state.foundAt = new Date().toISOString(); notify(bot, `The ${x.site} at ${site.x}, ${site.y}, ${site.z}. Going through it.`, `${kind === 'deep_dark' ? 'Cidade ancestral' : 'Câmaras do desafio'} em ${site.x}, ${site.y}, ${site.z}. Vou explorar.`); }
     if (x.vaults) {
       if (await pickUpKey(bot, task, goal, save, actions)) return 'key';
       if (await openVault(bot, task, goal, save, actions, site)) { state.vaults = (state.vaults || 0) + 1; save(); return 'vault'; }
@@ -137,7 +139,7 @@ async function expeditionStep(bot, task, goal, save, actions, kind = 'deep_dark'
     const target = next || new Vec3(site.x, site.y, site.z);
     if (!next && flat(here, site) <= 12) {
       site.lootedAt = new Date().toISOString(); state.cityDoneAt = site.lootedAt; save();
-      bot.chat?.(`Done with the ${x.site}: ${state.chests || 0} chests${x.vaults ? ` and ${state.vaults || 0} vaults` : ''} opened.`);
+      notify(bot, `Done with the ${x.site}: ${state.chests || 0} chests${x.vaults ? ` and ${state.vaults || 0} vaults` : ''} opened.`, `Terminei de explorar ${kind === 'deep_dark' ? 'a cidade ancestral' : 'as câmaras do desafio'}: ${state.chests || 0} baús${x.vaults ? ` e ${state.vaults || 0} cofres` : ''} abertos.`, 'important');
       return 'done';
     }
     goal.step = { action: kind, phase: 'site', target: { x: target.x, y: target.y, z: target.z } }; save();

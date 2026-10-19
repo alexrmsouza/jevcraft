@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 const { Vec3 } = require('vec3');
 const { countOf } = require('./skills');
 const { approachWorkstation } = require('./workstation-access');
@@ -101,7 +103,7 @@ async function depositInChest(bot, task, goal, save, block, target) {
     const stored = reconcileChestDeposit(goal, window, save);
     if (!stored) throw blocked('The chest did not receive the items.');
     const p = block.position;
-    bot.chat?.(`I put ${stored} ${item.replaceAll('_', ' ')} in the chest at ${p.x}, ${p.y}, ${p.z}.`);
+    notify(bot, `I put ${stored} ${item.replaceAll('_', ' ')} in the chest at ${p.x}, ${p.y}, ${p.z}.`, `Coloquei ${stored} ${displayName(item, bot)} no baú em ${p.x}, ${p.y}, ${p.z}.`, 'important');
     task.check();
     return (goal.delivered || 0) >= target;
   } finally { window.close(); }

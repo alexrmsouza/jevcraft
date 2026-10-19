@@ -2,9 +2,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { localize } = require('./language');
 
 const MODES = new Set(['open', 'named', 'auto']);
-const ALIASES = { aberto: 'open', open: 'open', nome: 'named', named: 'named', auto: 'auto' };
 const normalize = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
 
 function otherPlayers({ players, username } = {}) {
@@ -44,17 +44,19 @@ function createChatPolicy({ host, mode, file, directory, admins } = {}) {
     handleCommand(text, context = {}) {
       if (typeof text !== 'string' || !/^!jev\s+chat(?:\s|$)/i.test(text.trim())) return null;
       if (!player(context)) return result(context, null);
+      const say = (english, portuguese) => localize(context.language, english, portuguese);
       const match = /^!jev\s+chat(?:\s+(\S+))?\s*$/i.exec(text.trim());
       if (match && !match[1]) {
         const state = status(context);
-        return result(context, `Chat: ${state.mode} (efetivo: ${state.effective}; fonte: ${state.source}; outros jogadores: ${state.otherPlayers.length}).`);
+        return result(context, say(`Chat: ${state.mode} (effective: ${state.effective}; source: ${state.source}; other players: ${state.otherPlayers.length}).`,
+          `Chat: ${state.mode} (efetivo: ${state.effective}; fonte: ${state.source}; outros jogadores: ${state.otherPlayers.length}).`));
       }
       const alias = match && normalize(match[1]);
-      const selected = Object.hasOwn(ALIASES, alias) ? ALIASES[alias] : null;
-      if (!selected) return result(context, 'Use !jev chat aberto|nome|auto, ou !jev chat para consultar.');
+      const selected = MODES.has(alias) ? alias : null;
+      if (!selected) return result(context, say('Use !jev chat open|named|auto, or !jev chat to query.', 'Use !jev chat open|named|auto, ou !jev chat para consultar.'));
       const allowed = adminList.size ? adminList.has(normalize(context.from)) : local && otherPlayers(context).length === 1;
-      if (!allowed) return result(context, 'Sem permissão para alterar o chat. Configure JEV_CHAT_ADMINS.');
-      if (configured) return result(context, `JEV_CHAT_MODE fixa o chat em ${configured}; altere essa configuração para permitir mudanças pelo chat.`);
+      if (!allowed) return result(context, say('No permission to change chat settings. Configure JEV_CHAT_ADMINS.', 'Sem permissão para alterar o chat. Configure JEV_CHAT_ADMINS.'));
+      if (configured) return result(context, say(`JEV_CHAT_MODE fixes chat to ${configured}; change that setting to allow chat overrides.`, `JEV_CHAT_MODE fixa o chat em ${configured}; altere essa configuração para permitir mudanças pelo chat.`));
       if (target) {
         const temporary = `${target}.${randomUUID()}.tmp`;
         try {
@@ -63,12 +65,12 @@ function createChatPolicy({ host, mode, file, directory, admins } = {}) {
           fs.renameSync(temporary, target);
         } catch {
           try { fs.unlinkSync(temporary); } catch { /* No temporary file may have been created. */ }
-          return result(context, 'Não foi possível salvar a configuração do chat; o modo continua igual.');
+          return result(context, say('Could not save chat settings; the mode is unchanged.', 'Não foi possível salvar a configuração do chat; o modo continua igual.'));
         }
       }
       const changed = current() !== selected;
       saved = selected;
-      return result(context, `Chat configurado para ${selected}.`, changed);
+      return result(context, say(`Chat configured to ${selected}.`, `Chat configurado para ${selected}.`), changed);
     },
   };
 }

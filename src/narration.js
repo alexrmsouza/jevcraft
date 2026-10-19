@@ -1,4 +1,7 @@
 'use strict';
+const { isPortuguese, localize } = require('./language');
+const { shouldNarrate } = require('./communication');
+const portuguese = require('./locales/narration-pt-BR');
 // One line of chat when the bot starts on something new: a different source,
 // a different kind of work, or survival taking over. It is the cheapest window
 // there is into what Jev decided, and a player watching from behind should
@@ -135,11 +138,12 @@ function fed(bot) {
   if (hunger >= 18) return true;
   try { return require('./foraging').foodSupply(bot) >= 20 - hunger; } catch (_) { return false; }
 }
-function survivalLines(action, { dimension = 'overworld', morning = true, fed: full = false } = {}) {
-  if (full && STOCKING[action]) return STOCKING[action];
+function survivalLines(action, { dimension = 'overworld', morning = true, fed: full = false, language, bot } = {}) {
+  const catalog = isPortuguese(language || bot) ? portuguese : { SURVIVAL, SURVIVAL_ELSEWHERE, SURVIVAL_BY_NIGHT, STOCKING };
+  if (full && catalog.STOCKING[action]) return catalog.STOCKING[action];
   const off = !/overworld/.test(String(dimension || 'overworld'));
-  if (off) return OVERWORLD_ONLY.has(action) ? null : SURVIVAL_ELSEWHERE[action] || SURVIVAL[action];
-  return !morning && SURVIVAL_BY_NIGHT[action] ? SURVIVAL_BY_NIGHT[action] : SURVIVAL[action];
+  if (off) return OVERWORLD_ONLY.has(action) ? null : catalog.SURVIVAL_ELSEWHERE[action] || catalog.SURVIVAL[action];
+  return !morning && catalog.SURVIVAL_BY_NIGHT[action] ? catalog.SURVIVAL_BY_NIGHT[action] : catalog.SURVIVAL[action];
 }
 // Every line an action can say where it is said, for the prompt audit
 // (scripts/audit-prompts.js): null where the action is the Overworld's only.
@@ -207,7 +211,7 @@ const fortressAlreadyAnnounced = (goal, step) => {
 // The fortress the search knows, where the step is not a find: going back to
 // it (its point the leg's target), or searching past it. -> the line, null
 // (none known: the search's own line), or false (nothing to say).
-const knownFortressSays = (goal, step) => {
+const knownFortressSays = (goal, step, bot = null) => {
   const s = goal?.fortressSearch, f = s?.fortressAt;
   if (s && (s.inFortressSince || step?.goingTo || s.goTo || s.spawnerWait)) return false;
   if (!f || !Number.isFinite(f.x) || !Number.isFinite(f.z)) return null;
@@ -218,16 +222,20 @@ const knownFortressSays = (goal, step) => {
   // anchor, on its way to blazes seen in it (note 750b).
   if (s.inFortressSince || step?.goingTo || s.goTo || s.spawnerWait) return false;
   const t = step?.target;
-  if (s.rememberedTarget && t && Math.hypot(t.x - f.x, t.z - f.z) <= 16) return `Going back to the fortress at ${Math.round(f.x)}, ${Math.round(f.z)}.`;
-  return `Searching past the fortress I know at ${Math.round(f.x)}, ${Math.round(f.z)} (leg ${step.legs || 1}${legHeading(goal)}).`;
+  if (s.rememberedTarget && t && Math.hypot(t.x - f.x, t.z - f.z) <= 16) return localize(bot,
+    `Going back to the fortress at ${Math.round(f.x)}, ${Math.round(f.z)}.`, `Vou voltar à fortaleza em ${Math.round(f.x)}, ${Math.round(f.z)}.`);
+  return localize(bot, `Searching past the fortress I know at ${Math.round(f.x)}, ${Math.round(f.z)} (leg ${step.legs || 1}${legHeading(goal)}).`,
+    `Vou procurar além da fortaleza que conheço em ${Math.round(f.x)}, ${Math.round(f.z)} (trecho ${step.legs || 1}${legHeading(goal, bot)}).`);
 };
 // Which way the leg goes, so a person watching sees the search turn (note 689).
-const legHeading = goal => { const h = goal?.fortressSearch?.lastHeading; return Number.isInteger(h) && h >= 0 && h < 4 ? `, heading ${['east', 'south', 'west', 'north'][h]}` : ''; };
+const legHeading = (goal, bot = null) => { const h = goal?.fortressSearch?.lastHeading; return Number.isInteger(h) && h >= 0 && h < 4
+  ? localize(bot, `, heading ${['east', 'south', 'west', 'north'][h]}`, `, rumo ao ${['leste', 'sul', 'oeste', 'norte'][h]}`) : ''; };
 const some = (count, value) => count > 1 ? `${count} ${plural(count, value)}` : `some ${plural(2, value)}`;
 function stepVariants(goal, step, bot = null) {
+  if (isPortuguese(bot)) return portuguese.stepVariants(goal, step, bot, { keptOnHungry, fortressAlreadyAnnounced, knownFortressSays, fortressLeft, legHeading });
   const detail = step.detail && typeof step.detail === 'object' ? step.detail : null;
   switch (step.action) {
-    case 'combined_request': return detail ? stepVariants(goal, detail) : null;
+    case 'combined_request': return detail ? stepVariants(goal, detail, bot) : null;
     // Once per resource, not once per tree: which trunk Jev picked is in the
     // decision log, and a line per tree drowned the lines that mattered.
     case 'mine': { const what = some(step.count, step.drops || step.block); return [`I need ${what}.`, `Off to get ${what}.`, `Time to gather ${what}.`]; }
@@ -332,23 +340,38 @@ function stepKey(goal, step, decision) {
   return `${action}:${target}`;
 }
 
+const IMPORTANT_SURVIVAL = new Set(['sleep_failed', 'escape_threat', 'hold_defensive_position', 'dig_in_bunker', 'fight', 'charge',
+  'dig_in', 'wall_off', 'no_shelter_here', 'leave_lava_edge', 'douse', 'out_of_fire', 'surface', 'sheltered', 'leave_shelter', 'recover_items']);
+const survivalImportance = action => IMPORTANT_SURVIVAL.has(action.action) || (action.action === 'stay_up' && action.shelterFailed) ? 'important' : 'progress';
+const stepImportance = step => ['strike_out', 'return_for_food', 'refuel_furnace'].includes(step?.action === 'combined_request' ? step.detail?.action : step?.action) ? 'important' : 'progress';
+
 function narrate(bot, goal, { now = Date.now() } = {}) {
   if (typeof bot?.chat !== 'function' || !goal) return null;
   const state = goal.narrated ||= {};
-  const speak = line => {
-    if (!line || (state.at && now - state.at < MIN_GAP_MS)) return false;
+  const speak = (line, level = 'progress') => {
+    if (!line || !shouldNarrate(bot, level) || (state.at && now - state.at < MIN_GAP_MS)) return false;
     try { bot.chat(line); } catch (_) { return false; }
     state.at = now; state.line = line;
     return true;
   };
   const action = goal.survivalAction;
   const escape = state.escape;
+  // Suppressed events are consumed, so changing verbosity never replays old news.
+  if (!shouldNarrate(bot, stepImportance(goal.step)) && stepLine(goal, goal.step, null, state.line, bot)) state.step = stepKey(goal, goal.step);
+  if (!shouldNarrate(bot, 'important')) {
+    if (action?.at) state.survival = action.at;
+    if (escape) escape.resolved = true;
+    return null;
+  }
   if (escape && !escape.resolved && now - escape.at >= ESCAPE_QUIET_MS && !(action?.action === 'escape_threat' && action.at !== state.survival)) {
-    if (speak('I think I lost it.')) { escape.resolved = true; return 'I think I lost it.'; }
+    const line = localize(bot, 'I think I lost it.', 'Acho que despistei.');
+    if (speak(line, 'important')) { escape.resolved = true; return line; }
     return null;
   }
   if (action?.at && action.at !== state.survival) {
-    const phrase = survivalLines(action.action, { dimension: bot.game?.dimension, morning: isMorning(bot), fed: fed(bot) });
+    const level = survivalImportance(action);
+    if (!shouldNarrate(bot, level)) { state.survival = action.at; return null; }
+    const phrase = survivalLines(action.action, { dimension: bot.game?.dimension, morning: isMorning(bot), fed: fed(bot), bot });
     let line = pick(phrase, state.line, goal, action);
     if (action.action === 'escape_threat') {
       const names = [...new Set(threatsOf(action).map(t => name(t.name || t)))].sort().join(',');
@@ -362,7 +385,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     // same mobs or item is kept quiet through the window.
     const news = `${action.action}:${names(action).sort().join(',')}:${action.item || ''}:${action.what || ''}`;
     if (line && state.lastSurvivalLine?.news === news && now - state.lastSurvivalLine.at < ESCAPE_REPEAT_MS) { state.survival = action.at; return null; }
-    if (!phrase || !line || speak(line)) { state.survival = action.at; if (line) state.lastSurvivalLine = { news, at: now }; return line || null; }
+    if (!phrase || !line || speak(line, level)) { state.survival = action.at; if (line) state.lastSurvivalLine = { news, at: now }; return line || null; }
     return null;
   }
   // The work's step is not said while the body is out of air or its head
@@ -378,14 +401,14 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
   // A step with nothing to say (a tunnel segment, a climb) must not reset
   // the key, or the resource line fires again after every one of them.
   if (!line) return null;
-  if (speak(line)) {
+  if (speak(line, stepImportance(goal.step))) {
     state.step = key;
     // Once said, this fortress's own find is not said again (above).
     if (goal.step.action === 'find_fortress' && goal.step.fortress?.firstAt != null) state.fortressFirstAt = goal.step.fortress.firstAt;
-    if (goal.step.action === 'find_fortress' && line === "A fortress! I'm heading for it." && fortressPlace(goal.step)) state.fortressesSaid = [...(state.fortressesSaid || []), fortressPlace(goal.step)].slice(-16);
+    if (goal.step.action === 'find_fortress' && line === localize(bot, "A fortress! I'm heading for it.", 'Uma fortaleza! Vou até lá.') && fortressPlace(goal.step)) state.fortressesSaid = [...(state.fortressesSaid || []), fortressPlace(goal.step)].slice(-16);
     return line;
   }
   return null;
 }
 
-module.exports = { narrate, stepLine, stepKey, SURVIVAL, SURVIVAL_ELSEWHERE, OVERWORLD_ONLY, linesFor, survivalLines, MIN_GAP_MS, setRandom, pick };
+module.exports = { narrate, stepLine, stepKey, SURVIVAL, SURVIVAL_ELSEWHERE, SURVIVAL_BY_NIGHT, STOCKING, OVERWORLD_ONLY, linesFor, survivalLines, MIN_GAP_MS, setRandom, pick };

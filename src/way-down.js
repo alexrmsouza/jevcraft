@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // Down off a top the bot cannot walk off (note 565). mid-243-ab stood for an
 // hour on its own scattered tower twenty blocks over the forest canopy: every
 // side fell twenty to forty blocks, the fall rule (movement.js overFall,
@@ -630,7 +631,8 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   if (!way) return false;
   const before = bot.entity.position.clone();
   try {
-    bot.chat?.({ dig_down: 'No way down from up here at a walk. Digging down through the column.', ride_water: 'No way down from up here at a walk. Riding a waterfall down.', step_off: 'No way down from up here at a walk. Jumping off.' }[choice]);
+    notify(bot, { dig_down: 'No way down from up here at a walk. Digging down through the column.', ride_water: 'No way down from up here at a walk. Riding a waterfall down.', step_off: 'No way down from up here at a walk. Jumping off.' }[choice],
+      { dig_down: 'Não há caminho para descer andando. Vou escavar a coluna para descer.', ride_water: 'Não há caminho para descer andando. Vou descer pela água.', step_off: 'Não há caminho para descer andando. Vou saltar para baixo.' }[choice], 'important');
     const moved = await RUN[choice](bot, task, way.plan);
     const down = Math.round(before.y - bot.entity.position.y);
     bot._wayDownTried = [...tried, { way: choice, at: Date.now(), result: moved ? `came down ${down} blocks` : 'came down nothing' }].slice(-6);

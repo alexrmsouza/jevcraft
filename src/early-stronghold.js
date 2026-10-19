@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // The stronghold found before the eyes are all made, and the eyes put in its
 // frames as they come (note 1411), each Jev's to choose. By the ladder the
 // search began only with all thirteen eyes held, and every set of them was
@@ -71,7 +72,7 @@ async function earlyChoices(bot, task, goal, save, client, now = Date.now()) {
     if (decision.stale) return false;
     const pick = decision.path.at(-1);
     goal.earlyStronghold = { pick, at: now, eyes: have }; save();
-    if (pick === 'locate_now') bot.chat?.(`The stronghold first, with ${held} eye${held === 1 ? '' : 's'}.`);
+    if (pick === 'locate_now') notify(bot, `The stronghold first, with ${held} eye${held === 1 ? '' : 's'}.`, `Vou localizar a fortaleza primeiro, com ${held} ${held === 1 ? 'Olho' : 'Olhos'} do Ender.`);
     return true;
   }
   const need = portalNeed(goal), ep = goal.endPortal, make = makeable(bot), have = held + make;

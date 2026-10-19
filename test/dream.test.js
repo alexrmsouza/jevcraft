@@ -3,6 +3,24 @@ const test = require('node:test');
 const { Vec3 } = require('vec3');
 const assert = require('node:assert/strict');
 const { villageState, villageCandidates, chooseVillagePart, nextDreamRequest, shouldLaunchDream, resolveDream, VILLAGE_LEVELS, COOLDOWN_MS } = require('../src/dream');
+
+test('Portuguese dream clarifications preserve operation keys and user-provided dream text', async () => {
+  const client = operation => ({ systemOne: async () => ({ answers: { operation: { choice: operation, confidence: 0.1 } } }) });
+  const cleared = await resolveDream(client('clear'), { request: 'Jev forget your dream', from: 'Player' }, { context: { language: 'pt-BR' } });
+  assert.match(cleared.message, /abandone meu sonho/); assert.equal(cleared.clarification.operation, 'clear');
+  const unsure = await resolveDream(client('set_custom'), { request: 'Jev your dream is to build Home Base', from: 'Player' }, { username: 'Jev', context: { language: 'pt-BR' } });
+  assert.match(unsure.message, /Meu sonho deve ser/); assert(unsure.message.includes('build Home Base')); assert.equal(unsure.clarification.operation, 'set_custom');
+});
+
+test('dream reports localize their state without translating the player custom text', () => {
+  const { dreamReport, dreamTitle } = require('../src/dream');
+  assert.equal(dreamTitle({ dream: 'beat_the_game' }, 'pt-BR'), 'vencer o jogo');
+  assert.match(dreamReport(null, null, 'pt-BR'), /Ainda não tenho um sonho/);
+  const standing = { dream: 'custom', text: 'build Home Base', setAt: 'fixture' };
+  assert.match(dreamReport(standing, { dream: 'custom', dreamSetAt: 'fixture', status: 'running' }, 'pt-BR'), /build Home Base.*Estou trabalhando/);
+  assert.match(dreamReport({ ...standing, paused: true }, null, 'pt-BR'), /deixando de lado/);
+  assert.match(dreamReport({ ...standing, satisfiedAt: 'fixture' }, null, 'pt-BR'), /está concluído/);
+});
 const { preparationStage } = require('../src/game-progress');
 
 const structure = (name, request, extra = {}) => ({ id: name, name, request, status: 'complete', standing: 100, origin: { x: 0, y: 64, z: 0 }, entrance: { x: 1, y: 64, z: -1 }, distance: 5, builtAt: '2026-09-21T05:00:00Z', ...extra });

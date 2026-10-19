@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 const { Vec3 } = require('vec3');
 // Knowing what is around: which parts of the world the bot has been
 // through, and what it found there. The player asked for exploring as a
@@ -210,7 +211,7 @@ async function swimAcross(bot, task, goal, save, heading) {
   const along = () => (bot.entity.position.x - start.x) * Math.cos(angle) + (bot.entity.position.z - start.z) * Math.sin(angle);
   const land = ahead.landAt;
   goal.step = { action: 'swim_across', heading: HEADINGS[heading], water: { from: ahead.from, to: ahead.to }, land: { x: land.x, z: land.z } }; save();
-  bot.chat?.(`Water to the ${HEADINGS[heading]}. Swimming across it, about ${ahead.to - ahead.from + 4} blocks.`);
+  notify(bot, `Water to the ${HEADINGS[heading]}. Swimming across it, about ${ahead.to - ahead.from + 4} blocks.`, `Há água a ${['leste', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste', 'norte', 'nordeste'][heading]}. Vou atravessar nadando, cerca de ${ahead.to - ahead.from + 4} blocos.`);
   const water = () => /water/.test(bot.blockAt(bot.entity.position.floored())?.name || '');
   let stuck = 0;
   // A mob at the swimmer is answered, not swum on from: mid-231-f swam on

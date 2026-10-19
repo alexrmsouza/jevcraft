@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // Pearls from the warped forest. Endermen spawn there in numbers and leave
 // a player be who does not look at them, so the eyes' pearls are a walk to
 // the forest and a string of fights one at a time, not an Overworld night
@@ -152,7 +153,8 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     if (count(bot, 'ender_pearl') > watch.best) { watch.best = count(bot, 'ender_pearl'); watch.since = now(); }
     if (now() - watch.since > STALL_MS) {
       setAside(goal, 'rung', 'warped_pearls', 'fifteen minutes in the warped forest without a pearl', REST_MS); delete goal.warpedHunt; save();
-      bot.chat?.('No pearls from the warped forest for a while. Trying another way.');
+      notify(bot, 'No pearls from the warped forest for a while. Trying another way.',
+        'Estou há algum tempo sem conseguir pérolas na floresta distorcida. Vou tentar de outro jeito.', 'important');
       return false;
     }
     goal.step = { action: 'warped_pearls', at: { x: known.landmark.x, y: known.landmark.y, z: known.landmark.z }, pearls: count(bot, 'ender_pearl') }; save();
@@ -196,14 +198,15 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     // (mid-242-pf-nether-1, 2026-10-03 02:58:24Z) said "No warped forest
     // found" with 84, 119 and 206 warped stems known 48 to 51 blocks off.
     const knownForests = (goal.landmarks || []).filter(l => l.kind === 'warped_forest' && (!l.dimension || /nether/.test(l.dimension))).length;
-    bot.chat?.(knownForests ? `The warped forest${knownForests === 1 ? '' : 's'} known could not be reached. Pearls the other way for now.` : 'No warped forest found. Pearls the other way for now.');
+    notify(bot, knownForests ? `The warped forest${knownForests === 1 ? '' : 's'} known could not be reached. Pearls the other way for now.` : 'No warped forest found. Pearls the other way for now.',
+      knownForests ? 'Não consegui chegar às florestas distorcidas conhecidas. Vou buscar pérolas de outro jeito por enquanto.' : 'Não encontrei uma floresta distorcida. Vou buscar pérolas de outro jeito por enquanto.', 'important');
     return false;
   }
   const here = bot.entity.position;
   const [dx, dz] = HEADINGS[search.heading % 4];
   const leg = new Vec3(Math.round(here.x + dx * LEG), Math.max(40, Math.min(90, Math.round(here.y))), Math.round(here.z + dz * LEG));
   goal.step = { action: 'warped_search', leg: search.legs + 1, target: { x: leg.x, y: leg.y, z: leg.z } }; save();
-  if (search.legs === 0 && !search.said) { search.said = true; bot.chat?.('Looking for a warped forest: endermen, and their pearls.'); }
+  if (search.legs === 0 && !search.said) { search.said = true; notify(bot, 'Looking for a warped forest: endermen, and their pearls.', 'Vou procurar uma floresta distorcida para encontrar endermen e conseguir pérolas.'); }
   const before = Math.hypot(leg.x - here.x, leg.z - here.z);
   const seen = () => { actions.notice?.(bot, goal, save); return !!toWalk(); };
   const start = bot.entity.position.clone();

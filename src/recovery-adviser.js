@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 const { Vec3 } = require('vec3');
 const { checkAir, needsAir } = require('./vitals');
 const { checkThreats, immediateThreat } = require('./danger');
@@ -95,7 +97,10 @@ class RecoveryAdviser {
         // so twice reads as a stutter rather than as a plan. Jev says what it
         // is going to try, once each.
         const plan = [...new Set(advice.steps.map(describe))];
-        this.bot.chat?.(`That is not working. I'll try ${plan.join(', then ')}.`);
+        const describePortuguese = s => s.kind === 'acquire' ? `coletar ${s.count} ${displayName(s.item, this.bot)}` :
+          ({ surface: 'voltar à superfície', relocate: 'uma abordagem diferente', shelter: 'outro local para abrigo',
+            descend_pillar: 'descer deste pilar escavando', explore: `procurar ${displayName(s.resource, this.bot)} em outro lugar` }[s.kind] || 'uma abordagem diferente');
+        notify(this.bot, `That is not working. I'll try ${plan.join(', then ')}.`, `Isso não está funcionando. Vou tentar ${[...new Set(advice.steps.map(describePortuguese))].join(', depois ')}.`, 'important');
       }
       save(); this.bot.emit?.('recovery_advice', record);
       return !!state.active;
@@ -159,7 +164,7 @@ class RecoveryAdviser {
       if (complete) { active.cursor++; active.attempts = 0; delete active.actionStartedAt; }
       if (active.cursor >= active.steps.length) {
         this.finish(goal, save, 'Recovery actions completed; retrying original objective');
-        this.bot.chat?.('Okay, back to your request.');
+        notify(this.bot, 'Okay, back to your request.', 'Certo, voltando ao seu pedido.', 'important');
       } else save();
       return true;
     } catch (err) {

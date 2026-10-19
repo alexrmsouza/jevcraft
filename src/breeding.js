@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName } = require('./language');
 // Breeding in the field: two adults of a kind near the bot, fed their food,
 // make a third. Sheep are wool for the next bed (a death costs the carried
 // one) and chickens are feathers for arrows; the cow pen at the base keeps
@@ -47,7 +49,7 @@ async function breedNearby(bot, task, goal, save, species, { navigate }) {
     await sleep(400);
   }
   (goal.bred ||= {})[species] = new Date().toISOString(); save();
-  if (fed === 2) bot.chat?.(`Bred two ${species === 'sheep' ? 'sheep' : species === 'cow' ? 'cows' : 'chickens'}.`);
+  if (fed === 2) notify(bot, `Bred two ${species === 'sheep' ? 'sheep' : species === 'cow' ? 'cows' : 'chickens'}.`, `Reproduzi um par de ${displayName(species, bot)}.`, 'important');
   return fed === 2;
 }
 

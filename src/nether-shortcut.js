@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // The way through the Nether between the End portal and a chest of the
 // bot's far off in the Overworld (note 1279): a block walked there is eight
 // here. Asked of Jev once for each chest: through_nether casts or finds a
@@ -27,7 +28,8 @@ async function ask(bot, task, goal, save, chest, far) {
   if (decision.stale || decision.path.at(-1) !== 'through_nether') return false;
   goal.netherShortcut = { chest: { ...chest }, phase: 'out', at: Date.now() };
   goal.errand = { dimension: 'nether', items: [], for: ERRAND, at: Date.now() };
-  bot.chat?.(`Through the Nether for them: ${nether} blocks there in place of ${far} here.`);
+  notify(bot, `Through the Nether for them: ${nether} blocks there in place of ${far} here.`,
+    `Vou buscá-los pelo Nether: são ${nether} blocos por lá em vez de ${far} por aqui.`);
   save?.();
   return true;
 }

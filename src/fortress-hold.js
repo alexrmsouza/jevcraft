@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 // A fortress known stays the target until Jev leaves it (note 721).
 //
 // The most persistent failure of 2026-09-29 and -30: a bot finds a fortress
@@ -172,7 +173,8 @@ function leave(bot, state, { anchor, target = null, radius = 16, left = [], why 
   // 11:34Z) said so of the fortress it had just walked, and it read as a
   // fortress somewhere else (note 750).
   const off = round(Math.hypot(from3.x + 0.5 - p.x, from3.z + 0.5 - p.z));
-  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${off <= 2 ? 'at its bricks as I leave it' : `${off} blocks off`}. Searching on for another.${owed}`);
+  notify(bot, `Leaving the fortress at ${at3(anchor)} for now, ${off <= 2 ? 'at its bricks as I leave it' : `${off} blocks off`}. Searching on for another.${owed}`,
+    `Vou deixar a fortaleza em ${at3(anchor)} por enquanto, ${off <= 2 ? 'saindo de junto dos seus tijolos' : `a ${off} blocos de distância`}. Vou procurar outra.${rods ? ` Ainda preciso de ${rods} vara${rods === 1 ? '' : 's'} de blaze.` : ''}`, 'important');
 }
 
 // 5. A fetch of stems chosen under the fortress work and still holding: it

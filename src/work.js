@@ -71,7 +71,10 @@ const { opportunisticMining } = require('./opportunistic-mining');
 const { opportunisticPickups } = require('./opportunistic-pickups');
 const { reachShore } = require('./shore');
 const { collectNearbyDrops } = require('./drop-collection');
-const { friendlyProblem, recoveryHint, completion } = require('./speech');
+const { friendlyProblem, recoveryHint, completion, name: spokenName } = require('./speech');
+const { localize } = require('./language');
+const { announce } = require('./communication');
+const announceWork = (bot, english, portuguese, level = 'progress') => announce(bot, localize(bot, english, portuguese), level);
 const { boatTravelStep } = require('./boats');
 const { dimension: dimensionName } = require('./game-progress');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -322,7 +325,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     // gained nothing (note 684): that went up to the question above.
     const rests = terrain && require('./unstuck').spellRests(goal, bot.entity.position.floored(), now);
     if (terrain && !rests) { await inCatch(task, goal, () => require('./unstuck').workFree(bot, task, goal, save, { client, dig })); return; }
-    if (stall.strikes === 1) bot.chat?.(`${thing[0].toUpperCase()}${thing.slice(1)} isn't getting me anywhere. Something else, then.`);
+    if (stall.strikes === 1) announceWork(bot, `${thing[0].toUpperCase()}${thing.slice(1)} isn't getting me anywhere. Something else, then.`, 'Isso não está dando resultado. Vou tentar outra coisa.', 'important');
     return;
   }
   // In the Nether, the answers that meet it, read before the loose ends
@@ -387,7 +390,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       try { await moveOnFromResource(bot, task, goal, save); }
       finally { if (goal.step === mine) goal.step = step; }
     } else {
-      bot.chat?.(`I'm getting nowhere with ${spoken(thing)}. Trying another way.`);
+      announceWork(bot, `I'm getting nowhere with ${spoken(thing)}. Trying another way.`, 'Não estou conseguindo avançar. Vou tentar de outro jeito.', 'important');
       // Another way starts from somewhere else: the same spot is the same
       // attempt. Trial 24 answered a stalled plot by turning a search it
       // was not using, and stood by the same cell until the audit failed it.
@@ -564,7 +567,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       const at = bot.entity.position;
       goal.rungAside = { phase: rung, at: now, where: { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, until: restUntil || now + tried.REST_MS,
         why: String(stall.escalated?.says || stall.rung?.says || stall.error || `stalled ${stall.strikes} times`).slice(0, 300) };
-      bot.chat?.(`I keep getting stuck on ${spoken(rung)}. I'll come back to it.`);
+      announceWork(bot, `I keep getting stuck on ${spoken(rung)}. I'll come back to it.`, `Estou ficando preso na etapa de ${spokenName(rung, bot)}. Volto a ela depois.`, 'important');
     } };
   // A rung set aside earlier is offered back whenever the work in hand
   // stalls, said with why and when it was left, what its rest has left,
@@ -591,7 +594,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     answers[`take_up_${back.phase}`] = { takeBack: back.phase, description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${agoSays(now - back.at)} ago${from} (${back.why})${aside?.why ? `, for this: ${aside.why}` : ''}; it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
       run: async () => {
         require('./game-progress').takeBackRung(goal, back.phase); save();
-        bot.chat?.(`Back to ${spoken(back.phase)}.`);
+        announceWork(bot, `Back to ${spoken(back.phase)}.`, `Voltando à etapa de ${spokenName(back.phase, bot)}.`);
       } };
   }
   // Every way to the pearls from here, while they are the rung in hand
@@ -608,7 +611,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     // The rods again, where the pearls were taken up before them at
     // pearl_order (pearl-order.js rodsAgain, note 982).
     let again = null; try { again = require('./pearl-order').rodsAgain(bot, goal, now); } catch (_) { again = null; }
-    if (again) answers.rods_first = { description: again.description, run: async () => { again.run(); save(); bot.chat?.('Back to the rods.'); } };
+    if (again) answers.rods_first = { description: again.description, run: async () => { again.run(); save(); announceWork(bot, 'Back to the rods.', 'Voltando à busca por varas de blaze.'); } };
   }
   // Every way to it resting until a time: other work until then, as one
   // choice that holds, with the minutes said. mid-226-f kept its resting
@@ -930,7 +933,7 @@ function pickaxeCraftHistorySays(goal) {
 }
 async function maintainPickaxe(bot, task, goal, save, budget = null) {
   if (!spareDue(bot, budget)) return false;
-  if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
+  if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); announceWork(bot, 'My pickaxe is nearly done. Making a spare before it goes.', 'Minha picareta está quase quebrando. Vou fazer uma reserva.'); }
   await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
   goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: 'stone_pickaxe' }].slice(-10);
   save();
@@ -2303,7 +2306,7 @@ async function moveOnFromResource(bot, task, goal, save) {
   const now = countOf(bot, resource);
   const gained = list.length ? now - list.at(-1).count : 0;
   history[resource] = [...list, { at: Date.now(), count: now, gained }].slice(-10); save();
-  bot.chat?.(`I can't get at the ${String(step.block).replaceAll('_', ' ')} here. I'll look somewhere else.`);
+  announceWork(bot, `I can't get at the ${String(step.block).replaceAll('_', ' ')} here. I'll look somewhere else.`, `Não consigo alcançar ${spokenName(step.block, bot)} aqui. Vou procurar em outro lugar.`, 'important');
   try { await explore(bot, task, goal, save, step.block); }
   finally { if (goal.step === marker) { goal.step = step; save(); } }
   return true;
@@ -2440,7 +2443,7 @@ async function woodWhileUp(bot, task, goal, save, { cut = mineAtSource } = {}) {
     if (decision.stale) return;
     pick = decision.path.at(-1);
     goal.woodUp = { pick, at: Date.now(), x: Math.round(here.x), z: Math.round(here.z), want: owed.logs }; save();
-    if (pick === 'take_owed') bot.chat?.(`I'll take the wood I still need while I'm up here: ${owed.short} more logs' worth.`);
+    if (pick === 'take_owed') announceWork(bot, `I'll take the wood I still need while I'm up here: ${owed.short} more logs' worth.`, `Vou aproveitar para pegar a madeira que falta: o equivalente a mais ${owed.short} troncos.`);
   }
   if (pick !== 'take_owed') return;
   const want = Math.max(owed.logs, goal.woodUp?.want || 0);
@@ -2484,7 +2487,7 @@ async function surfaceStep(bot, task, goal, save) {
         goal.surfaceReturn ||= {}; goal.surfaceReturn.byHand = true; save();
         let wood = null;
         try { wood = require('./pickaxe-budget').nearestWood(bot, goal); } catch (_) { wood = null; }
-        bot.chat?.(wood ? `No pickaxe worth the name. The nearest wood is ${wood.distance} blocks off; making one from it is weighed against digging out by hand.` : "No pickaxe worth the name and no wood seen for one, so I'm digging out by hand.");
+        announceWork(bot, wood ? `No pickaxe worth the name. The nearest wood is ${wood.distance} blocks off; making one from it is weighed against digging out by hand.` : "No pickaxe worth the name and no wood seen for one, so I'm digging out by hand.", wood ? `Estou sem uma picareta útil. Há madeira a ${wood.distance} blocos; vou comparar fazer uma ferramenta com cavar a saída à mão.` : 'Estou sem uma picareta útil e não vi madeira para fazer outra. Vou cavar a saída à mão.', 'important');
       }
       return true;
     }
@@ -2700,7 +2703,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   if (pick === 'wait_for_dawn') {
     goal.surfaceTrip = { need, pick, asked, ...(phase ? { phase } : {}), until: Date.now() + Math.max(1, night.toDawn) * 60000, at: new Date().toISOString() };
     goal.step = { action: 'wait_for_dawn', need, until: new Date(goal.surfaceTrip.until).toISOString() }; save();
-    bot.chat?.(`I'll wait down here for morning before I climb up for ${need}.`);
+    announceWork(bot, `I'll wait down here for morning before I climb up for ${need}.`, 'Vou esperar amanhecer aqui embaixo antes de subir para buscar o que falta.');
     return;
   }
   if (pick === 'mine_first') {
@@ -2736,7 +2739,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     for (const p of [phase, ...also]) setAside(goal, 'rung', p, `Jev chose to stay below rather than climb${cost ? ` ${cost.up} blocks` : ''} for ${need}`, RUNG_WAIT_MS);
     delete goal.rungTime;
     goal.step = { action: 'stay_below', phase, need }; save();
-    bot.chat?.(`I'll leave the ${[phase, ...also].map(words).join(' and the ')} for now rather than climb all the way up for ${need}.`);
+    announceWork(bot, `I'll leave the ${[phase, ...also].map(words).join(' and the ')} for now rather than climb all the way up for ${need}.`, 'Vou deixar essas etapas para depois, em vez de subir tudo agora para buscar os materiais.');
     return;
   }
   save();
@@ -3782,7 +3785,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           // and back to the furnace for it when it is done.
           const until = Date.now() + cooking(), what = String(step.from || step.item).replace(/_/g, ' '), step0 = goal.step, leftAt = Date.now();
           furnace.close();
-          bot.chat?.(`Leaving the ${needed - taken} ${what} to cook, about ${Math.max(1, Math.round(cooking() / 1000))} seconds; working nearby meanwhile and coming back for them.`);
+          announceWork(bot, `Leaving the ${needed - taken} ${what} to cook, about ${Math.max(1, Math.round(cooking() / 1000))} seconds; working nearby meanwhile and coming back for them.`, `Vou deixar ${needed - taken} ${spokenName(step.from || step.item, bot)} na fornalha por cerca de ${Math.max(1, Math.round(cooking() / 1000))} segundos. Trabalho aqui perto e volto para buscar.`);
           let worked = true;
           bot._cookHold = { until, item: step.item };
           try {
@@ -3801,7 +3804,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           if (!back) {
             const f = bot.entity.position.floored(), now = Date.now();
             goal.smelting.left = { at: now, doneAt: until, lapsed: now, away: true, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why: 'no way back to it from where the work meanwhile led' } }; save();
-            bot.chat?.(`I can't get back to the furnace with the ${what} from here; I'll leave it there for now.`);
+            announceWork(bot, `I can't get back to the furnace with the ${what} from here; I'll leave it there for now.`, `Não consigo voltar à fornalha com ${spokenName(step.from || step.item, bot)} daqui. Vou deixar os itens lá por enquanto.`, 'important');
             left = true; break;
           }
           furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
@@ -3812,7 +3815,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         }
         if (plan === 'leave_cooking') {
           goal.smelting.left = { at: Date.now(), doneAt: Date.now() + cooking() }; save();
-          bot.chat?.(`Leaving the ${needed - taken} ${String(step.from || step.item).replace(/_/g, ' ')} to cook and getting on; I'll take them out when I'm back by the furnace.`);
+          announceWork(bot, `Leaving the ${needed - taken} ${String(step.from || step.item).replace(/_/g, ' ')} to cook and getting on; I'll take them out when I'm back by the furnace.`, `Vou deixar ${needed - taken} ${spokenName(step.from || step.item, bot)} na fornalha e continuar o trabalho. Retiro quando voltar por aqui.`);
           left = true; break;
         }
         task.check(); checkAir(bot);
@@ -3844,7 +3847,8 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           // Said, since the furnace cannot be seen: a bot walking off from
           // one looked lost (the user, 2026-09-24).
           const cookingWhat = String(step.from || step.item).replace(/_/g, ' ');
-          bot.chat?.(`${needed - taken} ${cookingWhat} in the furnace, about ${Math.max(1, Math.round(cooking() / 60000))} minute${cooking() >= 90000 ? 's' : ''}. Mining the ${String(bot.blockAt(far)?.name || 'ore').replace(/_/g, ' ')} nearby meanwhile.`);
+          const oreName = bot.blockAt(far)?.name || 'ore';
+          announceWork(bot, `${needed - taken} ${cookingWhat} in the furnace, about ${Math.max(1, Math.round(cooking() / 60000))} minute${cooking() >= 90000 ? 's' : ''}. Mining the ${String(oreName).replace(/_/g, ' ')} nearby meanwhile.`, `Há ${needed - taken} ${spokenName(step.from || step.item, bot)} na fornalha, por cerca de ${Math.max(1, Math.round(cooking() / 60000))} minuto${cooking() >= 90000 ? 's' : ''}. Vou minerar ${oreName === 'ore' ? 'o minério' : spokenName(oreName, bot)} aqui perto enquanto isso.`);
           // The pockets' own count while the window is shut: the furnace
           // window's copy of them is stale once closed, and the walk went on
           // digging into full pockets (note 771: 25591 at 01:27:08Z, 2026-10-01,
@@ -4450,8 +4454,8 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     goal.buildOwned = { ...goal.buildOwned };
     goal.step = { action: goal.continueBuild.mode === 'repair' ? 'repair_building' : 'finish_building', building: entry.name };
     save(); onStep(goal);
-    bot.chat(goal.continueBuild.mode === 'repair' ? `I'll check ${entry.name} over and put back anything missing.`
-      : `Picking ${entry.name} back up where I left it.`);
+    announceWork(bot, goal.continueBuild.mode === 'repair' ? `I'll check ${entry.name} over and put back anything missing.`
+      : `Picking ${entry.name} back up where I left it.`, goal.continueBuild.mode === 'repair' ? `Vou conferir ${entry.name} e repor o que estiver faltando.` : `Vou continuar ${entry.name} de onde parei.`);
     return false;
   }
   if (!goal.design) {
@@ -4465,7 +4469,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
       const name = goal.buildContinuation.name || 'that building';
       goal.buildContinuation = { ...goal.buildContinuation, mode: 'fresh', placement: 'beside_target', editUnsupported: true };
       delete goal.buildId; save();
-      bot.chat(`I can't change ${name} without the custom designer, so I'll build this beside it instead.`);
+      announceWork(bot, `I can't change ${name} without the custom designer, so I'll build this beside it instead.`, `Não consigo alterar ${name} sem o projetista de construções personalizadas. Vou construir ao lado.`, 'important');
     }
     // Recheck saved geometry after a validator update, before paying for a
     // replacement or silently reducing the user's request to a house template.
@@ -4485,10 +4489,10 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     else if (fallback) {
       if (!client) throw Object.assign(new Blocked('The building fallback needs a configured Jev connection'), { needsPlayer: true });
       goal.designFallbackReason = goal.designError || (mode === 'jev' ? 'Jev templates selected' : 'No OpenRouter designer key configured');
-      bot.chat("I'm working out a simpler way to build it.");
+      announceWork(bot, "I'm working out a simpler way to build it.", 'Estou planejando um jeito mais simples de construir isso.');
     } else {
       goal.designAttempts = (goal.designAttempts || 0) + 1;
-      bot.chat('Let me draw up a plan for that. It takes me a minute.');
+      announceWork(bot, 'Let me draw up a plan for that. It takes me a minute.', 'Vou preparar um projeto para isso. Leva um instante.');
     }
     // An extension is designed against the building it joins, not in a vacuum:
     // the designer gets that building's own schematic so the new part can match
@@ -4542,8 +4546,8 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     delete goal.designDraft; delete goal.designError;
     save();
     const changing = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;
-    bot.chat(changing ? `I've worked out how to change ${changing}. Starting on it now.`
-      : `I've planned ${goal.design.source.name}! I'll find a good spot and start building.`);
+    announceWork(bot, changing ? `I've worked out how to change ${changing}. Starting on it now.`
+      : `I've planned ${goal.design.source.name}! I'll find a good spot and start building.`, changing ? `Já planejei as mudanças em ${changing}. Vou começar agora.` : `Já preparei o projeto de ${goal.design.source.name}! Vou procurar um bom lugar e começar.`);
     return false;
   }
   const schematic = validateSchematic(goal.design.source, bot.registry);
@@ -4591,16 +4595,16 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     }
     save();
     const reworking = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;
-    bot.chat(reworking ? `Reworking ${reworking} at ${pos(goal.blueprint.origin)}.`
-      : `Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`);
+    announceWork(bot, reworking ? `Reworking ${reworking} at ${pos(goal.blueprint.origin)}.`
+      : `Building ${goal.design.source.name} near ${pos(goal.blueprint.origin)}.`, reworking ? `Alterando ${reworking} em ${pos(goal.blueprint.origin)}.` : `Construindo ${goal.design.source.name} perto de ${pos(goal.blueprint.origin)}.`);
     // Something castle-sized is hours of placing blocks by hand. Say so at
     // the start, while stopping it is still a cheap decision for the player.
     const effort = buildEffort(goal.blueprint);
-    if (effort) bot.chat(`That is a big one: ${effort.blocks} blocks, so give me about ${effort.spoken}. Say "Jev stop" if that is too long.`);
+    if (effort) announceWork(bot, `That is a big one: ${effort.blocks} blocks, so give me about ${effort.spoken}. Say "Jev stop" if that is too long.`, `Essa construção é grande: ${effort.blocks} blocos, cerca de ${effort.minutes} minutos. Diga "Jev stop" se for muito tempo.`, 'important');
     if (goal.blueprint.preserved?.length) {
-      bot.chat(reworking
+      announceWork(bot, reworking
         ? `${goal.blueprint.preserved.length} blocks in the way there are not mine, so I'll work around them.`
-        : `There are ${goal.blueprint.preserved.length} blocks already there. I'll build around them rather than take them down.`);
+        : `There are ${goal.blueprint.preserved.length} blocks already there. I'll build around them rather than take them down.`, `Já há ${goal.blueprint.preserved.length} blocos ali que não são meus. Vou construir ao redor deles.`);
     }
   }
   const blueprint = goal.blueprint;
@@ -4782,7 +4786,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
     terrain.prepared = true; terrain.preparedAt = new Date().toISOString(); save(); return;
   }
   if (!terrain.announced) {
-    bot.chat(terrain.kind === 'shore_foundation' ? "I'll fill in a firm base by the water, then build on top." : "I'll level the ground here, then start building.");
+    announceWork(bot, terrain.kind === 'shore_foundation' ? "I'll fill in a firm base by the water, then build on top." : "I'll level the ground here, then start building.", terrain.kind === 'shore_foundation' ? 'Vou preencher uma base firme perto da água e construir em cima.' : 'Vou nivelar o terreno aqui e depois começar a construção.');
     terrain.announced = true; save();
   }
   const tops = new Map(), bottoms = new Map();
@@ -6304,12 +6308,12 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     if (pick === 'clear_blocker') {
       const cells = require('./portal-cast').blockersFor(bot, f, pos(slot)).slice(0, 4).map(b => ({ x: b.at.x, y: b.at.y, z: b.at.z }));
       f.repair = { kind: 'clear', slot: { ...slot }, cells };
-      bot.chat?.(`Clearing the way into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) and going on here.`);
+      announceWork(bot, `Clearing the way into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) and going on here.`, `Vou liberar o espaço da estrutura em (${slot.x}, ${slot.y}, ${slot.z}) e continuar aqui.`);
     } else {
       const pass = ((f.passStands ||= {})[k] ||= []);
       for (const c of f.standsTried?.[k] || []) if (!pass.some(q => q.x === c.x && q.y === c.y && q.z === c.z)) pass.push({ ...c });
       delete f.standsMade?.[k];
-      bot.chat?.(`Pouring into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) from another side and going on here.`);
+      announceWork(bot, `Pouring into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) from another side and going on here.`, `Vou despejar pelo outro lado no espaço da estrutura em (${slot.x}, ${slot.y}, ${slot.z}) e continuar aqui.`);
     }
     delete method.siteFailed; method.reasked = (method.reasked || 0) + 1; restate(routes[current]); save();
     return true;
@@ -6337,7 +6341,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (pick === 'look_for_pool') {
     goal.poolLooks = { n: (goal.poolLooks?.n || 0) + 1, at: Date.now() };
     goal.step = { action: 'look_for_pool', looks: goal.poolLooks.n }; save();
-    bot.chat?.("I'll look for a lava pool up top before I go down to the deep lava.");
+    announceWork(bot, "I'll look for a lava pool up top before I go down to the deep lava.", 'Vou procurar um lago de lava na superfície antes de descer até a lava mais funda.');
     try { if (require('./surface').climbToSurface(bot, bot.entity.position) >= 3) await surfaceStep(bot, task, goal, save); await exploreStep(bot, task, goal, save, { navigate, home: goal.survival?.home?.origin, noticeVillage }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[portal] the look for a surface pool: ${err.message}`); }
     return false;
@@ -6367,19 +6371,21 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket');
     goal.portalBuckets = { target: carriers + r.price.make, before: carriers, at: now };
   }
-  bot.chat?.(planChat(goal.portalMethod, r, ruin));
+  announce(bot, planChat(goal.portalMethod, r, ruin, bot));
   save();
   if (goal.portalBuckets && r?.price?.make > 0) return false;
   return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
 }
 // The plan chosen, said once: where the frame goes and where its lava
 // comes from, and what that was priced at.
-function planChat(m, r, ruin) {
-  if (m.kind === 'build') return 'Portal plan: a frame of obsidian.';
-  if (m.kind === 'ruin') return `Portal plan: finishing the ruined portal ${ruin?.distance ?? '?'} blocks away.`;
+function planChat(m, r, ruin, language) {
+  if (m.kind === 'build') return localize(language, 'Portal plan: a frame of obsidian.', 'Plano do portal: uma estrutura de obsidiana.');
+  if (m.kind === 'ruin') return localize(language, `Portal plan: finishing the ruined portal ${ruin?.distance ?? '?'} blocks away.`, `Plano do portal: completar o portal arruinado a ${ruin?.distance ?? '?'} blocos.`);
   const lava = m.lava.way === 'deep' ? 'the lava layer' : `the lava at (${m.lava.at.x}, ${m.lava.at.y}, ${m.lava.at.z})`;
   const site = r.site === 'beside' ? `beside ${lava}` : `${r.site === 'new_site' ? 'at a new site near here' : 'here'}, its lava from ${lava}`;
-  return `Portal plan: a frame cast ${site}${r.price.make ? `, ${r.price.make} more bucket${r.price.make === 1 ? '' : 's'} made first` : ''}${m.minutes ? `, about ${m.minutes} minutes` : ''}.`;
+  const lavaPt = m.lava.way === 'deep' ? 'a camada de lava' : `a lava em (${m.lava.at.x}, ${m.lava.at.y}, ${m.lava.at.z})`;
+  const sitePt = r.site === 'beside' ? `ao lado de ${lavaPt}` : `${r.site === 'new_site' ? 'em outro lugar aqui perto' : 'aqui'}, usando ${lavaPt}`;
+  return localize(language, `Portal plan: a frame cast ${site}${r.price.make ? `, ${r.price.make} more bucket${r.price.make === 1 ? '' : 's'} made first` : ''}${m.minutes ? `, about ${m.minutes} minutes` : ''}.`, `Plano do portal: moldar a estrutura ${sitePt}${r.price.make ? `, fazendo mais ${r.price.make} balde${r.price.make === 1 ? '' : 's'} primeiro` : ''}${m.minutes ? `, cerca de ${m.minutes} minutos` : ''}.`);
 }
 
 // The rest on the way to a lava: the staircase dug toward it (portalStep
@@ -7034,7 +7040,7 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     if (!frame.ruin && goal.portalFrame === frame && frame.siteFailures >= 3 && !castIn) {
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
       delete goal.portalFrame; save();
-      bot.chat?.('This spot will not take the portal. Finding another.');
+      announceWork(bot, 'This spot will not take the portal. Finding another.', 'O portal não cabe neste lugar. Vou procurar outro.', 'important');
       return false;
     }
     // With obsidian in it, leaving the frame is Jev's: the way to a portal
@@ -7073,7 +7079,7 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     if (!frame.ruin && goal.portalFrame === frame && frame.siteFailures >= 10) {
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
       delete goal.portalFrame; save();
-      bot.chat?.('This spot will not take the portal. Finding another.');
+      announceWork(bot, 'This spot will not take the portal. Finding another.', 'O portal não cabe neste lugar. Vou procurar outro.', 'important');
       return false;
     }
     // A ruin's frame, after ten: it cannot be moved, so the ruin is marked as
@@ -7086,7 +7092,7 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
       if (mark) { mark.noFrame = true; mark.why = err.message; }
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
       delete goal.portalFrame; delete goal.portalMethod; save();
-      bot.chat?.('This ruined portal will not take a frame. Finding another way.');
+      announceWork(bot, 'This ruined portal will not take a frame. Finding another way.', 'Não consigo completar a estrutura deste portal arruinado. Vou tentar outro jeito.', 'important');
       return false;
     }
     throw err;
@@ -7175,7 +7181,7 @@ async function relightPortalAt(bot, task, goal, save, where = 'nether') {
   if (!bottoms.length) throw new Blocked(`${says}, and no whole frame of it is found within six blocks to light again`);
   if (!lighter) throw new Blocked(`${says}, and neither flint and steel nor a fire charge is carried to light it again`);
   goal.step = { action: 'relight_portal', portal: { x: p.x, y: p.y, z: p.z }, with: lighter.name }; save();
-  bot.chat?.('My portal is out. Lighting it again.');
+  announceWork(bot, 'My portal is out. Lighting it again.', 'Meu portal apagou. Vou acendê-lo de novo.', 'important');
   for (const bottom of bottoms.slice(0, 3)) {
     task.check();
     try { await navigate(bot, task, new goals.GoalNear(bottom.x, bottom.y, bottom.z, 2), { timeoutMs: 15000, stallMs: 4000 }); }
@@ -7285,9 +7291,9 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   // Said once for a problem, never as a counter: 25589 said "I'll keep
   // trying (attempt 5 ... 130)" over nine minutes in one spot (note 775).
   const problemKey = route?.target ? `route:${route.target.x},${route.target.z}` : String(err.message).slice(0, 60);
-  if (route?.newly) bot.chat?.(routeAside.chatSays(route.aside));
+  if (route?.newly) announceWork(bot, routeAside.chatSays(route.aside), 'Esse caminho não deu certo. Vou tentar outra passagem.', 'important');
   else if (goal.struggles === 1 || goal.struggleSaid !== problemKey) {
-    bot.chat?.(`${friendlyProblem(err, { known: (goal.fortressSearch?.found && goal.fortressSearch.fortressAt) || goal.fortressSearch?.found || null })} I'll keep trying.`);
+    announce(bot, `${friendlyProblem(err, { bot, known: (goal.fortressSearch?.found && goal.fortressSearch.fortressAt) || goal.fortressSearch?.found || null })} ${localize(bot, "I'll keep trying.", 'Vou continuar tentando.')}`, 'important');
   }
   goal.struggleSaid = problemKey;
   const failed = goal.lastStruggleStep || goal.step;
@@ -7377,7 +7383,7 @@ async function keepRoom(bot, task, goal) {
     // not at every stack.
     const quiet = goal.tidied && Date.now() - Date.parse(goal.tidied.at) < 600000;
     goal.tidied = { at: new Date().toISOString(), dropped };
-    if (!quiet) bot.chat?.(`My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}${d.why ? ` (${d.why})` : ''}`).join(', ')} here.`);
+    if (!quiet) announceWork(bot, `My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}${d.why ? ` (${d.why})` : ''}`).join(', ')} here.`, `Meu inventário está cheio. Vou deixar ${dropped.map(d => `${d.count} ${spokenName(d.name, bot)}`).join(', ')} aqui.`, 'important');
   }
 }
 
@@ -7675,13 +7681,13 @@ function sideTrips(bot, goal, client) {
       says: `I'll head to the ${b.biome.replaceAll('_', ' ')} to the ${b.direction}`, walkBlocks: b.distance,
       run: async (b2, t, g, sv) => {
         if (!onSurface(b2)) {
-          b2.chat?.(`Climbing out first, for the ${b.biome.replaceAll('_', ' ')}.`);
+          announceWork(b2, `Climbing out first, for the ${b.biome.replaceAll('_', ' ')}.`, `Vou subir primeiro para chegar a ${spokenName(b.biome, b2)}.`);
           await surfaceTrip(b2, t, g || goal, sv || (() => {}), `the ${b.biome.replaceAll('_', ' ')}`);
           if (!onSurface(b2)) return;
         }
         await navigate(b2, t, new goals.GoalNearXZ(b.x, b.z, 8), { timeoutMs: Math.max(60000, b.distance * 500), stallMs: 8000, sprint: true });
         if (!onSurface(b2)) throw new Error(`The walk to the ${b.biome.replaceAll('_', ' ')} ended under it, not on it`);
-        b2.chat?.(`In the ${b.biome.replaceAll('_', ' ')} now.`);
+        announceWork(b2, `In the ${b.biome.replaceAll('_', ' ')} now.`, `Cheguei a ${spokenName(b.biome, b2)}.`);
       } };
   }
   // Copper armour before the iron, where nothing is worn yet (2026's copper
@@ -8744,7 +8750,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     require('./game-progress').optIn(goal, phase);
     if (key === 'food' && goal.kitFood?.choice?.pick === 'go_without') delete goal.kitFood.choice;
     delete kit.choice; save();
-    bot.chat?.(`The ${key} for the Nether is empty: taking it up again first.`);
+    announceWork(bot, `The ${key} for the Nether is empty: taking it up again first.`, 'Falta reabastecer o equipamento para o Nether. Vou cuidar disso antes de atravessar.', 'important');
     return false;
   }
   const offer = entry.find(o => `top_up_${o.key}` === pick);
@@ -8754,7 +8760,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   try {
     if (pick === 'bank_rods_first') {
       goal.rodBank = { at: Date.now(), rods: rodsToBank.rods, from: { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) }, chest: rodsToBank.how, onArrival: true }; save();
-      bot.chat?.(`The ${rodsToBank.rods === 1 ? 'rod' : `${rodsToBank.rods} rods`} into a chest here before I cross.`);
+      announceWork(bot, `The ${rodsToBank.rods === 1 ? 'rod' : `${rodsToBank.rods} rods`} into a chest here before I cross.`, `Vou guardar ${rodsToBank.rods} ${spokenName('blaze_rod', bot)} em um baú antes de atravessar.`);
     }
     else if (pick === 'spare_kit') await require('./home-stash').leaveSpareKit(bot, task, goal, save, homeActions(), spareKit);
     else if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
@@ -9157,7 +9163,7 @@ function gameHandlers(bot, decisionClient) {
           if (pick === 'hunt') { goal.step = { ...stage, patrol: 'hunt' }; save(); await acquireStep(bot, task, 'ender_pearl', countOf(bot, 'ender_pearl') + (stage.count || 1), goal, save); return; }
           if (pick !== 'search') {
             goal.step = { ...stage, patrol: pick }; save();
-            if (goal.patrolSaid !== pick) { goal.patrolSaid = pick; bot.chat?.(`No endermen about. ${trips[pick].says || pick.replaceAll('_', ' ')} meanwhile, and take any enderman I meet.`); }
+            if (goal.patrolSaid !== pick) { goal.patrolSaid = pick; announceWork(bot, `No endermen about. ${trips[pick].says || pick.replaceAll('_', ' ')} meanwhile, and take any enderman I meet.`, `Não há ${spokenName('enderman', bot)} por perto. Vou fazer outra tarefa enquanto procuro algum.`); }
             try { await trips[pick].run(bot, task, goal, save); }
             catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'strategy_side', pick, err, 10 * 60 * 1000); }
             return;
@@ -9535,7 +9541,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         if (goal.kind === 'house') survival.rememberHouse(goal.blueprint);
         bot.buildRegistry?.remember(goal, { dimension: dimension(bot), status: 'complete' });
         goal.status = 'complete'; goal.completedAt = new Date().toISOString(); save();
-        bot.chat(completion(goal));
+        announce(bot, completion(goal, bot), 'important');
         return { ok: true, goal };
       }
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
@@ -9633,7 +9639,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         goal.status = 'blocked'; if (!err.needsPlayer) goal.impossible = true;
         if (err.waitOn) goal.waitingOn = { ...err.waitOn, since: new Date().toISOString() };
         save();
-        bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
+        announce(bot, `${friendlyProblem(err, { bot })} ${localize(bot, 'I saved our progress.', 'Salvei nosso progresso.')} ${recoveryHint(err, bot)}`, 'important');
         return { ok: false, reason: err.message, goal };
       }
       if (err.name === 'Blocked' || goal.failures >= 3) {
@@ -9654,7 +9660,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     save(); onStep(goal);
   }
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();
-  bot.chat('This is taking a while. I saved our progress. Say "Jev resume" to keep going.');
+  announceWork(bot, 'This is taking a while. I saved our progress. Say "Jev resume" to keep going.', 'Isso está demorando. Salvei nosso progresso. Diga "Jev resume" para continuar.', 'important');
   return { ok: false, reason: goal.lastError, goal };
   } finally { stopObserving(); if (bot._stalls) bot._stalls.goalOf = null; task.stallCheck = undefined; require('./arbiter').unwatch(bot); }
 }

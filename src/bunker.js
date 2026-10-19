@@ -1,4 +1,5 @@
 'use strict';
+const { notify } = require('./communication');
 const { move } = require('./motion');
 // A blaze spawner keeps six in the air at once, and walking into that room
 // burned the bot to a crisp twice. Players fight a spawner from a doorway:
@@ -610,7 +611,8 @@ async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod',
     const state = goal.mobHunt ||= {};
     const bunker = await digBunker(bot, task, goal, save, { navigate: actions.navigate });
     state.bunker = { mouth: { ...bunker.mouth }, inside: { ...bunker.inside }, at: Date.now() }; save();
-    bot.chat?.('Too many blazes to face in the open. Digging in beside them and taking them at the door.');
+    notify(bot, 'Too many blazes to face in the open. Digging in beside them and taking them at the door.',
+      'Tem blazes demais para enfrentar ao ar livre. Vou cavar um abrigo ao lado e enfrentá-los na entrada.', 'important');
     const stats = {};
     const kills = await holdBunker(bot, task, goal, save, bunker, { item, want, stats });
     await collectRods(bot, task, goal, save, bunker, actions, item);

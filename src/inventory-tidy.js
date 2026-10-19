@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName, formatItems } = require('./language');
 // Pockets full is a quiet way to stall: iron ore mined and never picked up,
 // a crafting grid that spills its contents on the ground, seven furnaces
 // nobody asked for. The dream run reached that state with twelve stacks of
@@ -634,7 +636,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
         try { for (const st of stowable) { const it = bot.inventory.items().find(i => i.name === st.name); if (!it) continue; await win.deposit(it.type, null, it.count); contents[st.name] = (contents[st.name] || 0) + it.count; } }
         finally { win.close(); }
         if (goal) { (goal.caches ||= []).push({ position: { x: chestCellNow.x, y: chestCellNow.y, z: chestCellNow.z }, dimension: String(bot.game?.dimension || 'overworld'), contents, placedAt: new Date().toISOString(), reason: `room for the ${name.replaceAll('_', ' ')}`, room: true }); }
-        bot.chat?.(`Leaving ${Object.entries(contents).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}`).join(', ')} in a chest here to make room.`);
+        notify(bot, `Leaving ${Object.entries(contents).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}`).join(', ')} in a chest here to make room.`, `Vou deixar ${formatItems(contents, bot)} em um baú aqui para abrir espaço.`, 'important');
         console.log(`[room] for ${name}: a chest put down at ${chestCellNow} with ${JSON.stringify(contents)}`);
       } catch (err) { task?.check?.(); console.log(`[room] chest here failed: ${String(err.message || err).slice(0, 160)}`); }
       continue;
@@ -646,7 +648,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     catch (err) { task?.check?.(); return null; }
     // Food dropped is said: it left 25598's pockets with no word (note 690).
     const dropped = foodSays(bot, [stack]);
-    if (dropped) bot.chat?.(`Dropping ${dropped} to make room for the ${name.replaceAll('_', ' ')}.`);
+    if (dropped) notify(bot, `Dropping ${dropped} to make room for the ${name.replaceAll('_', ' ')}.`, `Vou deixar ${stack.count} ${displayName(stack.name, bot)} no chão para abrir espaço para ${displayName(name, bot)}.`, 'important');
     // Remembered where it fell, for the food rung to offer the walk back
     // while it lies there (note 771b).
     if (dropped && goal) noteDroppedFood(bot, goal, stack);

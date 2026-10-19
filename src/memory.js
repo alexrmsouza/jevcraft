@@ -2,6 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), { randomUUID } = require('node:crypto');
 const { Vec3 } = require('vec3'), { goals } = require('mineflayer-pathfinder');
 const { friendlyProblem } = require('./speech');
+const { localize, displayName } = require('./language');
 
 const dimension = name => String(name || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
 const position = p => p && ['x', 'y', 'z'].every(k => Number.isFinite(p[k]) && Math.abs(p[k]) <= (k === 'y' ? 4096 : 30000000))
@@ -118,31 +119,41 @@ class CompanionMemory {
     this.state.forgottenPreferences = this.state.forgottenPreferences.slice(-256);
     this.flush(); return count;
   }
-  handle(spec, { world } = {}) {
+  handle(spec, { world, bot, language = bot } = {}) {
+    const say = (english, portuguese) => localize(language, english, portuguese);
+    const where = value => say(value, { overworld: 'Superfície', nether: 'Nether', end: 'End' }[dimension(value)] || value);
     const { operation, label, location, note, targetId, replaceId, found } = spec.memory;
-    if (found) return `The ${found.label} I found is at ${found.position.x}, ${found.position.y}, ${found.position.z} in the ${found.dimension}.`;
+    if (found) return say(`The ${found.label} I found is at ${found.position.x}, ${found.position.y}, ${found.position.z} in the ${found.dimension}.`, `${found.label} está em ${found.position.x}, ${found.position.y}, ${found.position.z}, na dimensão ${where(found.dimension)}.`);
     const from = spec.from;
     if (operation === 'remember_place') {
       const place = this.rememberPlace(from, label, location.position, location.dimension);
-      return `I'll remember ${place.label} at ${coordinates(place)}.`;
+      return say(`I'll remember ${place.label} at ${coordinates(place)}.`, `Vou me lembrar de ${place.label} em ${coordinates(place)}.`);
     }
-    if (operation === 'remember_note') { this.rememberNote(from, note, replaceId); return "I'll remember that."; }
-    if (operation === 'forget') return this.forget(from, targetId) ? "I've forgotten that." : "I couldn't find that in your notes.";
+    if (operation === 'remember_note') { this.rememberNote(from, note, replaceId); return say("I'll remember that.", 'Vou me lembrar disso.'); }
+    if (operation === 'forget') return this.forget(from, targetId) ? say("I've forgotten that.", 'Esqueci isso.') : say("I couldn't find that in your notes.", 'Não encontrei isso nas suas notas.');
     const context = this.context(from), entries = [...context.places, ...context.notes, ...context.history, ...context.preferences];
     if (targetId === 'all') {
-      const explored = world ? ` ${require('./exploration').foundSentence(world)}` : '';
-      if (!entries.length) return text(`I haven't saved anything for you yet. Try: Jev remember this as home.${explored}`);
+      let explored = '';
+      if (world) {
+        const areas = Object.keys(world.explored || {}).filter(k => k.startsWith('overworld:')).length;
+        const found = require('./exploration').foundEntries(world).filter(e => e.dimension === 'overworld').length;
+        explored = ` ${say(require('./exploration').foundSentence(world), `Explorei ${areas} ${areas === 1 ? 'área' : 'áreas'} e encontrei ${found} ${found === 1 ? 'lugar' : 'lugares'}.`)}`;
+      }
+      if (!entries.length) return text(say(`I haven't saved anything for you yet. Try: Jev remember this as home.${explored}`, `Ainda não salvei nada para você. Experimente: Jev remember this as home.${explored}`));
       const labels = context.places.slice(-3).map(e => e.label);
       const latest = context.notes.at(-1)?.note;
-      return text(`I remember ${context.places.length} places, ${context.notes.length} notes, ${context.preferences.length} learned preferences, and ${context.history.length} tasks.${labels.length ? ` Places: ${labels.join(', ')}.` : ''}${latest ? ` Latest note: ${latest}` : ''}${explored}`);
+      const quantity = (n, singular, plural) => `${n} ${n === 1 ? singular : plural}`;
+      return text(say(`I remember ${context.places.length} places, ${context.notes.length} notes, ${context.preferences.length} learned preferences, and ${context.history.length} tasks.${labels.length ? ` Places: ${labels.join(', ')}.` : ''}${latest ? ` Latest note: ${latest}` : ''}${explored}`,
+        `Lembro de ${quantity(context.places.length, 'lugar', 'lugares')}, ${quantity(context.notes.length, 'nota', 'notas')}, ${quantity(context.preferences.length, 'preferência aprendida', 'preferências aprendidas')} e ${quantity(context.history.length, 'tarefa', 'tarefas')}.${labels.length ? ` Lugares: ${labels.join(', ')}.` : ''}${latest ? ` Última nota: ${latest}` : ''}${explored}`));
     }
     const entry = entries.find(e => e.id === targetId);
-    if (!entry) return "I don't remember that yet.";
-    if (entry.position) return `${entry.label} was saved at ${coordinates(entry)} in the ${entry.dimension}.`;
-    if (entry.note) return text(`You told me: ${entry.note}`);
-    if (entry.category === 'wood_species') return `You asked for ${entry.value.replaceAll('_', ' ')} wood before, so I'll usually pick it when you don't say which wood.`;
+    if (!entry) return say("I don't remember that yet.", 'Ainda não me lembro disso.');
+    if (entry.position) return say(`${entry.label} was saved at ${coordinates(entry)} in the ${entry.dimension}.`, `${entry.label} foi salvo em ${coordinates(entry)}, na dimensão ${where(entry.dimension)}.`);
+    if (entry.note) return text(say(`You told me: ${entry.note}`, `Você me disse: ${entry.note}`));
+    if (entry.category === 'wood_species') return say(`You asked for ${entry.value.replaceAll('_', ' ')} wood before, so I'll usually pick it when you don't say which wood.`, `Você já pediu ${displayName(`${entry.value}_planks`, language)} antes. Vou preferir essa madeira quando você não especificar uma.`);
     const status = { complete: 'finished', blocked: 'got stuck on', running: 'was working on', cancelled: 'stopped', replaced: 'paused', interrupted: 'paused', pending: 'saved' }[entry.status] || 'saved';
-    return text(`I ${status}: ${entry.request}${entry.problem ? ` ${entry.problem}` : ''}`);
+    const portugueseStatus = { complete: 'Concluí', blocked: 'Fiquei impedido de continuar', running: 'Estava trabalhando em', cancelled: 'Parei', replaced: 'Pausei', interrupted: 'Pausei', pending: 'Salvei' }[entry.status] || 'Salvei';
+    return text(say(`I ${status}: ${entry.request}${entry.problem ? ` ${entry.problem}` : ''}`, `${portugueseStatus}: ${entry.request}${entry.problem ? ` ${friendlyProblem(entry.problem, { language })}` : ''}`));
   }
 }
 const coordinates = entry => ['x', 'y', 'z'].map(k => Math.floor(entry.position[k])).join(', ');

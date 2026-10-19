@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { displayName, formatItems } = require('./language');
 // Pack light, plan to die. Before a bold trip (the deep dark, a bastion, a
 // trial chamber) everything but the trip's kit goes into a chest on the
 // spot, so a death out there costs the kit and a walk, not the run's
@@ -87,7 +89,9 @@ async function packLight(bot, task, goal, save, actions, trip, { now = Date.now(
     });
     cache.contents = home.stash.contents || {}; save();
     const food = require('./food-keep').foodSays(bot, stored);
-    bot.chat?.(`Packing light for ${trip.replaceAll('_', ' ')}: ${stored.length} kinds of things left in a chest here${food ? `, food among them: ${food}` : ''}. If I die out there, they wait for me.`);
+    const foods = stored.filter(move => require('./food-keep').isFood(bot, move.item || move.name)).reduce((counts, move) => { const item = move.item || move.name; counts[item] = (counts[item] || 0) + move.count; return counts; }, {});
+    const destination = { trial_chambers: 'as câmaras do desafio', bastion: 'o bastião', deep_dark: 'as profundezas sombrias' }[trip] || displayName(trip, bot);
+    notify(bot, `Packing light for ${trip.replaceAll('_', ' ')}: ${stored.length} kinds of things left in a chest here${food ? `, food among them: ${food}` : ''}. If I die out there, they wait for me.`, `Vou levar pouca coisa para ${destination}: deixei ${stored.length} tipos de item em um baú aqui${food ? `, incluindo ${formatItems(foods, bot)}` : ''}. Se eu morrer por lá, eles ficam me esperando.`);
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
     setAside(goal, 'pack_light', trip, err, 20 * 60 * 1000); save();

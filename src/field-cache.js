@@ -1,4 +1,6 @@
 'use strict';
+const { notify } = require('./communication');
+const { formatItems } = require('./language');
 // A chest on the spot before something risky, when home is too far to walk
 // the valuables back to. The dream run went into the Nether five hundred
 // blocks from its base with fifty-eight raw iron, a stack of lapis and its
@@ -99,7 +101,8 @@ async function cacheValuables(bot, task, goal, save, actions, { reason = 'the Ne
     const stored = await stash().stockStash(bot, task, goal, save, home, actions, { valuables: true, only: cacheMove });
     cache.contents = home.stash.contents; save();
     const what = stored.filter(m => m.valuable).map(m => `${m.count} ${m.item.replaceAll('_', ' ')}`).slice(0, 4).join(', ');
-    bot.chat?.(`Leaving ${what || 'my valuables'} in a chest here before ${reason}. I'll pick them up on the way back.`);
+    const kept = stored.filter(m => m.valuable).slice(0, 4).reduce((counts, move) => { counts[move.item] = (counts[move.item] || 0) + move.count; return counts; }, {});
+    notify(bot, `Leaving ${what || 'my valuables'} in a chest here before ${reason}. I'll pick them up on the way back.`, `Vou deixar ${formatItems(kept, bot) || 'meus itens valiosos'} em um baú aqui antes de ${reason === 'the Nether' ? 'ir ao Nether' : reason}. Busco na volta.`, 'important');
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
     setAside(goal, 'field_cache', 'here', err, 20 * 60 * 1000); save();
@@ -131,7 +134,7 @@ async function emptyCache(bot, task, goal, save, actions, cache) {
     const taken = await stash().restockFromStash(bot, task, goal, save, home, actions, wants);
     cache.contents = home.stash.contents || {}; cache.emptiedAt = new Date().toISOString(); save();
     if (!taken.length) setAside(goal, 'field_cache_take', key, 'nothing came out', 20 * 60 * 1000);
-    else bot.chat?.('Picked my valuables back up from the chest.');
+    else notify(bot, 'Picked my valuables back up from the chest.', 'Peguei meus itens valiosos de volta no baú.', 'important');
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
     if (/not where it was placed/.test(err.message)) { cache.contents = {}; cache.lostAt = new Date().toISOString(); }
