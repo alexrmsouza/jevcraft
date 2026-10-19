@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // Combat practice. The dream run lost seven lives in one fortress and every
 // lesson cost a ten-minute restock; here a lesson costs a minute. Each drill
 // stages one encounter that actually killed the bot, runs the real survival
@@ -54,10 +55,9 @@ const log = entry => {
 };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// One command a line down the server's console pipe. The pipe has a reader
-// (start.sh holds it open with tail), so a write never blocks for long.
+// Commands use the native server launcher's queue (or an existing Unix FIFO).
 async function command(line) {
-  fs.writeFileSync(consolePath, line + '\n');
+  writeConsoleFile(consolePath, line + '\n');
   await sleep(120);
 }
 async function commands(list) { for (const line of list) await command(line); }

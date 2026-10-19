@@ -32,12 +32,17 @@
     "test": "node scripts/test.js",
     "accept": "node scripts/acceptance.js",
     "build-followup": "node scripts/build-followup-test.js",
-    "skin": "node scripts/create-robot-skin.js"
+    "skin": "node scripts/create-robot-skin.js",
+    "trial": "node scripts/trials/cli.js",
+    "server": "node scripts/server/start.js",
+    "check:portability": "node scripts/check-portability.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "fflate": "^0.8.3",
     "minecraft-data": "^3.0.0",
     "mineflayer": "^4.39.0",
     "mineflayer-pathfinder": "^2.4.5",

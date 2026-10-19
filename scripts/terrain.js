@@ -1,5 +1,6 @@
 const { Vec3 } = require('vec3');
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // Terrain drills (see scripts/lib/terrain.js): the places that killed or
 // stalled the bot, staged on the isolated arena server and run against the
 // real code. A drill passes when the bot gets through: no death, no fall,
@@ -37,7 +38,7 @@ const directory = path.join(__dirname, '..', 'artifacts', `terrain-${id}`);
 fs.mkdirSync(directory, { recursive: true });
 const log = entry => { const line = JSON.stringify({ at: new Date().toISOString(), ...entry }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function command(line) { fs.writeFileSync(consolePath, line + '\n'); await sleep(120); }
+async function command(line) { writeConsoleFile(consolePath, line + '\n'); await sleep(120); }
 async function commands(list) { for (const line of list) await command(line); }
 
 const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '26.1', auth: 'offline' });
@@ -486,7 +487,7 @@ const RUNS = {
 
 async function runDrill(d, attempt) {
   // A captured place is hundreds of fills: sent forty lines at a time.
-  if (d.bulk) { const lines = buildCommands(d); for (let i = 0; i < lines.length; i += 40) { fs.writeFileSync(consolePath, lines.slice(i, i + 40).join('\n') + '\n'); await sleep(300); } await sleep(1500); }
+  if (d.bulk) { const lines = buildCommands(d); for (let i = 0; i < lines.length; i += 40) { writeConsoleFile(consolePath, lines.slice(i, i + 40).join('\n') + '\n'); await sleep(300); } await sleep(1500); }
   else await commands(buildCommands(d));
   await commands(placeCommands(username, d));
   if (audience) await commands([`gamemode spectator ${audience}`, `spectate ${username} ${audience}`]);

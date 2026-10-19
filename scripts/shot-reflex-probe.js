@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The shot reflex measured at work (note 676): a probe player in iron with
 // a shield walks back and forth across a netherrack room (pathfinder, eight
 // blocks each way) with a blaze hovering seven blocks to its side, and at
@@ -18,7 +19,7 @@ const reflex = require('../src/shot-reflex');
 const PORT = Number(process.env.MC_PORT || 0), CONSOLE = process.env.ARENA_CONSOLE;
 if (!PORT || !CONSOLE) { console.error('MC_PORT and ARENA_CONSOLE, a scratch server\'s'); process.exit(1); }
 if ([25565].includes(PORT) || (PORT >= 25581 && PORT <= 25610)) { console.error('not a trial server'); process.exit(1); }
-const say = l => fs.appendFileSync(CONSOLE, l + '\n');
+const say = l => writeConsoleFile(CONSOLE, l + '\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const mode = process.argv[2] || 'reflex', seconds = Number(process.argv[3] || 60), count = Number(process.argv[4] || 1);
 const NAME = 'ShotProbe', D = 'minecraft:the_nether', X = 1600, Y = 100, Z = 1600;

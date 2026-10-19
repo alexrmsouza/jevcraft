@@ -18,10 +18,11 @@
 // run it on the machine (and time zone) the servers ran in.
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const { replayMeta, cameraTimeline, writeTimeline } = require('./replay-camera');
+const { replayDirectory } = require('../lib/replay-paths');
 
 const ROOT = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..', '..');
 const FLIGHT = path.join(ROOT, '.bot-state', 'flight');
-const OUT = process.env.REPLAY_RECORDINGS || path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings');
+const OUT = replayDirectory();
 const arg = (name, dflt) => { const i = process.argv.indexOf(`--${name}`); return i < 0 ? dflt : process.argv[i + 1]; };
 const flag = name => process.argv.includes(`--${name}`);
 const DAY = arg('day', new Date().toISOString().slice(0, 10));
@@ -366,7 +367,7 @@ chosen.forEach((m, i) => {
   };
   if (!flag('dry')) {
     try {
-      fs.mkdirSync(OUT, { recursive: true });
+      replayDirectory({ explicit: OUT, required: true });
       const target = path.join(OUT, file);
       fs.copyFileSync(rec.file, target);
       // The camera: Jev's frames over the clip; a death's stop at it (the

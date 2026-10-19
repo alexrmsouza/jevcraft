@@ -16,10 +16,11 @@ const fs = require('fs');
 const path = require('path');
 
 function summarize(profile, root = '') {
+  root = root.replaceAll('\\', '/');
   const byId = new Map(profile.nodes.map(n => [n.id, n]));
   const parent = new Map();
   for (const n of profile.nodes) for (const c of (n.children || [])) parent.set(c, n.id);
-  const key = n => { const f = n.callFrame; const url = String(f.url || '').replace(/^file:\/\//, ''); return `${f.functionName || '(anon)'} ${root && url.startsWith(root + '/') ? url.slice(root.length + 1) : url.replace(/^.*\/(src|test|scripts|node_modules)\//, '$1/')}:${f.lineNumber + 1}`; };
+  const key = n => { const f = n.callFrame; const url = String(f.url || '').replaceAll('\\', '/').replace(/^file:\/\//, ''); return `${f.functionName || '(anon)'} ${root && url.startsWith(root + '/') ? url.slice(root.length + 1) : url.replace(/^.*\/(src|test|scripts|node_modules)\//, '$1/')}:${f.lineNumber + 1}`; };
   const self = {}, incl = {};
   for (let i = 0; i < profile.samples.length; i++) {
     const dt = profile.timeDeltas[i] || 0;

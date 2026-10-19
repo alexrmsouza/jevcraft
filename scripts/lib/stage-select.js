@@ -230,10 +230,10 @@ function runningSources(root, { exceptPort = null, listening = portListening } =
   let dirs = [];
   try { dirs = fs.readdirSync(root).filter(d => /^\.clean-run(-\d+)?$/.test(d)); } catch (_) { return by; }
   for (const d of dirs) {
-    let props = '';
-    try { props = fs.readFileSync(path.join(root, d, 'server.properties'), 'utf8'); } catch (_) { continue; }
-    const port = Number((props.match(/^server-port=(\d+)/m) || [])[1]);
-    const level = (props.match(/^level-name=(.+)$/m) || [])[1];
+    let props;
+    try { props = require('./platform').readProperties(path.join(root, d, 'server.properties')); } catch (_) { continue; }
+    const port = Number(props['server-port']);
+    const level = props['level-name'];
     if (!port || !level || !/^mid-/.test(level) || port === Number(exceptPort) || !listening(port)) continue;
     const src = sourceWorld(level);
     by[src] = (by[src] || 0) + 1;
@@ -241,8 +241,7 @@ function runningSources(root, { exceptPort = null, listening = portListening } =
   return by;
 }
 function portListening(port) {
-  const r = require('node:child_process').spawnSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN'], { encoding: 'utf8', timeout: 10000 });
-  return r.status === 0 && !!String(r.stdout || '').trim();
+  return !!require('./platform').listenerPid(port);
 }
 
 // The rotation over a set of saves: the source world with the fewest trials

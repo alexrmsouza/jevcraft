@@ -1,15 +1,15 @@
 'use strict';
-// A trial's bot needs a supervisor (scripts/trials/supervisor.sh) or nothing
+// A trial's bot needs a supervisor (scripts/trials/supervisor.js) or nothing
 // starts it again when it quits for a new build: mid-242-bd had none, quit
 // at minute 33 and stayed down three hours (note 640). Starting a trial
 // starts its port's supervisor when none is running, as retry.sh does.
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { supervised } = require('../../src/quiet-restart');
+const { isSupervised } = require('./platform');
 
-function ensureSupervisor(port, root, { has = supervised, start = defaultStart } = {}) {
-  if (has(port)) return false;
+function ensureSupervisor(port, root, { has = isSupervised, start = defaultStart } = {}) {
+  if (has(port, root)) return false;
   start(port, root);
   return true;
 }
@@ -17,7 +17,7 @@ function defaultStart(port, root) {
   const dir = path.join(root, 'artifacts', 'supervisors');
   fs.mkdirSync(dir, { recursive: true });
   const out = fs.openSync(path.join(dir, `${port}.log`), 'a');
-  spawn('sh', ['scripts/trials/supervisor.sh', String(port)], { cwd: root, detached: true, stdio: ['ignore', out, out] }).unref();
+  try { spawn(process.execPath, [path.join(root, 'scripts/trials/supervisor.js'), String(port)], { cwd: root, detached: true, windowsHide: true, stdio: ['ignore', out, out] }).unref(); } finally { fs.closeSync(out); }
 }
 
 // The stretches in which a bot left no flight frame: any gap of five

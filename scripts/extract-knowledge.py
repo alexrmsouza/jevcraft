@@ -104,5 +104,6 @@ output = {'version': '26.1', 'source': 'Vanilla Minecraft server recipe, item/bl
           'fuelPlanks': sorted(set(ingredient('#minecraft:planks')) - set(ingredient('#minecraft:non_flammable_wood')))}
 destination = Path(__file__).resolve().parent.parent / 'data' / 'vanilla-26.1.json'
 destination.parent.mkdir(exist_ok=True)
-destination.write_text(json.dumps(output, separators=(',', ':')) + '\n')
+with destination.open('w', encoding='utf-8', newline='\n') as destination_file:
+    destination_file.write(json.dumps(output, separators=(',', ':')) + '\n')
 print(json.dumps({'file': str(destination), 'craftableItems': len(recipes), 'smeltableItems': len(smelting), 'specialDrops': len(special)}))

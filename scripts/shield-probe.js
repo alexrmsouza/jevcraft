@@ -11,7 +11,7 @@ const { arenaBuild, sessionSetup } = require(B + '/scripts/lib/arena');
 const { deflect } = require(B + '/src/projectile-guard');
 const { Task } = require(B + '/src/skills');
 const CONSOLE = B + '/.test-combat/console.in';
-const say = l => fs.appendFileSync(CONSOLE, l + '\n');
+const say = l => writeConsoleFile(CONSOLE, l + '\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const NAME = 'ShieldProbe', D = 'minecraft:the_nether', STAND = [2010.5, 77, 2010.5], SKEL = [2010.5, 77, 2002.5];
 const bot = mineflayer.createBot({ host: '127.0.0.1', port: 25574, username: NAME, version: '26.1' });

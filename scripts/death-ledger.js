@@ -11,10 +11,11 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const os = require('node:os');
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) => (a.startsWith('--') ? [...out, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : out), []));
 const port = String(args.port || '25588');
-const root = args.root ? path.resolve(String(args.root).replace(/^~/, process.env.HOME)) : path.join(__dirname, '..');
+const root = args.root ? path.resolve(String(args.root).replace(/^~(?=$|[\\/])/, os.homedir())) : path.join(__dirname, '..');
 const WINDOW_MS = 12000;
 
 // The runs: every midgame log of a dragon stage, its start the file's birth.

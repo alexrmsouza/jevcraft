@@ -197,7 +197,7 @@ function burningAhead(bot, keys, { deep = false, flames = true } = {}) {
 function watchReleases(bot) {
   if (bot._releaseWatch || typeof bot.setControlState !== 'function') return;
   bot._releaseWatch = true;
-  const frames = () => new Error().stack.split('\n').slice(3, 6).map(l => l.trim().replace(/^at /, '').replace(/\(.*\/src\//, '(src/')).join(' < ');
+  const frames = () => new Error().stack.split('\n').slice(3, 6).map(l => l.trim().replaceAll('\\', '/').replace(/^at /, '').replace(/\(.*\/src\//, '(src/')).join(' < ');
   const raw = bot.setControlState.bind(bot);
   bot.setControlState = (key, on) => { if (!on && bot._controller && !bot._controller.failed && bot._controller.keys?.includes(key) && bot.controlState?.[key]) bot._controller.letGoBy = `set(${key}, false) at ${frames()}`; return raw(key, on); };
   if (typeof bot.clearControlStates === 'function') { const rawClear = bot.clearControlStates.bind(bot); bot.clearControlStates = () => { if (bot._controller && !bot._controller.failed) bot._controller.letGoBy = `clearControlStates at ${frames()}`; return rawClear(); }; }

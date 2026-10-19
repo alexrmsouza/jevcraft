@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // Why does the bot ignore that mob? The arena had it stand still with a
 // wither skeleton five blocks away and no action at all, so this asks the
 // danger layer, entity by entity, what it thinks it is looking at.
@@ -17,7 +18,7 @@ if ([25565, 25570, 25577, 25579].includes(port)) throw new Error('Not on a live 
 const entity = process.argv[2] || 'wither_skeleton';
 const consolePath = process.env.ARENA_CONSOLE || path.join(__dirname, '..', '.test-combat', 'console.in');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const command = async line => { fs.writeFileSync(consolePath, line + '\n'); await sleep(200); };
+const command = async line => { writeConsoleFile(consolePath, line + '\n'); await sleep(200); };
 const stand = process.env.ARENA_PROBE_AT || '3000.5 77 3000.5';
 const [sx, sy, sz] = stand.split(/\s+/).map(Number);
 const spawn = process.env.ARENA_PROBE_SPAWN || `${sx + 5} ${sy} ${sz}`;

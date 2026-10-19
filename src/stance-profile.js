@@ -26,8 +26,9 @@ function heaviest(profile, top = 8) {
     const dt = profile.timeDeltas[i] || 0, seen = new Set();
     for (let cur = id; cur != null; cur = parent.get(cur)) {
       const f = nodes.get(cur).callFrame;
-      if (!/\/src\/[^/]+\.js$/.test(f.url) || !f.functionName || /stance-profile\.js$/.test(f.url) || f.functionName === 'stanceOptions') continue;
-      const k = `${f.functionName} ${f.url.split('/').pop()}`;
+      const url = String(f.url || '').replaceAll('\\', '/');
+      if (!/\/src\/[^/]+\.js$/.test(url) || !f.functionName || /stance-profile\.js$/.test(url) || f.functionName === 'stanceOptions') continue;
+      const k = `${f.functionName} ${url.split('/').pop()}`;
       if (!seen.has(k)) { seen.add(k); incl[k] = (incl[k] || 0) + dt; }
     }
   });

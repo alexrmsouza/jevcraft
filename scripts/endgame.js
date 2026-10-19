@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The late-game rehearsal: the rungs the dream run has never reached, run
 // on an isolated normal world before the run gets there. Each drill runs the
 // ladder's own handlers (gameHandlers in src/work.js) with the survival
@@ -38,7 +39,7 @@ const statePath = path.join(__dirname, '..', 'artifacts', 'endgame-state.json');
 fs.mkdirSync(directory, { recursive: true });
 const log = entry => { const line = JSON.stringify({ at: new Date().toISOString(), ...entry }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const command = async line => { fs.writeFileSync(consolePath, line + '\n'); await sleep(150); };
+const command = async line => { writeConsoleFile(consolePath, line + '\n'); await sleep(150); };
 const commands = async lines => { for (const line of lines) await command(line); };
 const known = () => { try { return JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch (_) { return {}; } };
 const remember = patch => fs.writeFileSync(statePath, JSON.stringify({ ...known(), ...patch }, null, 2));

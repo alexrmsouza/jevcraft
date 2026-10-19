@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The dragon's landing and take-off by the fountain, measured on the arena
 // (note 1614): the death ledger of 2026-10-14 puts 'fall after the dragon's
 // body (carried)' first (dragon-148 to 151, four of the five deaths from 08:57
@@ -26,7 +27,7 @@ const modes = (process.env.PERCH_MODES || 'open,hole').split(',');
 const AT = Number(process.env.PERCH_AT || 11);
 const GROUND = Number(process.env.PERCH_GROUND || 62);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function command(line) { fs.writeFileSync(consolePath, line + '\n'); await sleep(200); }
+async function command(line) { writeConsoleFile(consolePath, line + '\n'); await sleep(200); }
 const end = line => `execute in minecraft:the_end run ${line}`;
 const out = [];
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); out.push(data); };

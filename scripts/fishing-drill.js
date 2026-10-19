@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The fishing drill (note 1203): the food question's two ways to fish
 // (src/fishing.js), run against the rehearsal server on a pool built in the
 // sky, with what each brought and how long it took.
@@ -30,7 +31,7 @@ const consolePath = path.join(serverDir, 'console.in');
 const username = process.env.FISH_USER || 'FishJev';
 const drills = process.argv.slice(2).length ? process.argv.slice(2) : ['rod', 'spear'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const command = async line => { fs.writeFileSync(consolePath, line + '\n'); await sleep(150); };
+const command = async line => { writeConsoleFile(consolePath, line + '\n'); await sleep(150); };
 const commands = async lines => { for (const line of lines) await command(line); };
 const log = entry => console.log(JSON.stringify({ at: new Date().toISOString(), ...entry }));
 

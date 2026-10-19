@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // An End fight drill on the arena server (note 1342): a kit as a trial
 // carries it in, staged through the arena's console pipe (no operator), the
 // bot set on the main island and the fight run as the live bot runs it
@@ -33,7 +34,7 @@ const id = Date.now().toString(36), directory = path.join(__dirname, '..', 'arti
 fs.mkdirSync(directory, { recursive: true });
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); fs.appendFileSync(path.join(directory, 'events.jsonl'), line + '\n'); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function command(line) { fs.writeFileSync(consolePath, line + '\n'); await sleep(150); }
+async function command(line) { writeConsoleFile(consolePath, line + '\n'); await sleep(150); }
 
 const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '26.1', auth: 'offline' });
 bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder);

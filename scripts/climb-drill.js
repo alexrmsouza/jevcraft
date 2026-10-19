@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The two-block climb on a one-wide column's top, measured on the arena
 // (2026-10-15): the climb out of the breath laid one of two and the body did
 // not rise, or rose and was found a cell off its column, in 25588's
@@ -25,7 +26,7 @@ const H = Number(process.env.CLIMB_H || 4);
 const AT = Number(process.env.CLIMB_AT || 40);
 const OFF = Number(process.env.CLIMB_OFF || 0);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function command(line) { fs.writeFileSync(consolePath, line + '\n'); await sleep(200); }
+async function command(line) { writeConsoleFile(consolePath, line + '\n'); await sleep(200); }
 const end = line => `execute in minecraft:the_end run ${line}`;
 const log = data => console.log(JSON.stringify({ at: new Date().toISOString(), ...data }));
 

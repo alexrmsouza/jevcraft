@@ -9,14 +9,16 @@
 // Needs artifacts/deaths.json (death-index.js) and the flight records.
 const fs = require('fs'), path = require('path');
 const { replayMeta, framesFor, cameraTimeline, writeTimeline } = require('./replay-camera');
-const ROOT = path.join(__dirname, '..', '..');
+const { replayDirectory } = require('../lib/replay-paths');
+const ROOT = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..', '..');
 const BEFORE = Number(process.argv[2] || 30) * 1000, AFTER = Number(process.argv[3] || 3) * 1000;
-const OUT = (process.env.REPLAY_RECORDINGS || path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings'));
+const OUT = replayDirectory();
 const deaths = JSON.parse(fs.readFileSync(path.join(ROOT, 'artifacts', 'deaths.json'), 'utf8'));
 const FLIGHT = path.join(ROOT, '.bot-state', 'flight');
 
 let written = 0;
 for (const d of deaths) {
+  replayDirectory({ explicit: OUT, required: true });
   const port = (d.server.match(/-(\d+)$/) || [, '25581'])[1];
   const died = new Date(d.local).getTime();
   let recStart = died - d.secondsIn * 1000;

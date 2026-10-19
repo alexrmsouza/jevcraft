@@ -1,4 +1,5 @@
 'use strict';
+const { writeConsoleFile } = require('./lib/server');
 // The dragon's pass over a column, measured on the arena (note 1575): the
 // death ledger of 2026-10-14 puts 'carried off the column by the dragon's
 // body' first (10 of 44 deaths; dragon-112, 114, 120, 121). In the game's
@@ -28,7 +29,7 @@ const dropBlocks = Number(process.env.DROP || 24);
 const COL = { x: 20, z: 0, top: 84 }; // the column's cell and its top block; the feet stand at top + 1
 const GROUND = 61; // the island's ground about the column (the arena's End is the game's own)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function command(line) { fs.writeFileSync(consolePath, line + '\n'); await sleep(200); }
+async function command(line) { writeConsoleFile(consolePath, line + '\n'); await sleep(200); }
 const end = line => `execute in minecraft:the_end run ${line}`;
 const out = [];
 const log = data => { const line = JSON.stringify({ at: new Date().toISOString(), ...data }); console.log(line); out.push(data); };
