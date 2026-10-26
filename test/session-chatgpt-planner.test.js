@@ -6,13 +6,15 @@ const { EventEmitter } = require('node:events');
 const { Vec3 } = require('vec3');
 const { createPlanner } = require('../src/planner');
 
-async function fixture(t, { planner, saved, legacy, initialPaused = true, reactive, host = 'test', chatMode, chatAdmins, language, narration, communication } = {}) {
-  for (const [key, value] of [['JEV_CHAT_MODE', chatMode], ['JEV_CHAT_ADMINS', chatAdmins], ['JEV_LANGUAGE', language], ['JEV_NARRATION', narration]]) {
+async function fixture(t, { planner, saved, legacy, initialPaused = true, reactive, host = 'test', chatMode, chatAdmins, language, narration, communication,
+  personality, initiative, companionNow, stateDirectory } = {}) {
+  for (const [key, value] of [['JEV_CHAT_MODE', chatMode], ['JEV_CHAT_ADMINS', chatAdmins], ['JEV_LANGUAGE', language], ['JEV_NARRATION', narration],
+    ['JEV_PERSONALITY', personality], ['JEV_INITIATIVE', initiative]]) {
     const previous = process.env[key];
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
     t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
   }
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-planner-session-'));
+  const directory = stateDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'jev-planner-session-'));
   const file = path.join(directory, `${host}-1-Jev.json`), said = [], launches = [], scans = [], pluginWaitFlags = [];
   const communicationFile = path.join(directory, `${host}-1-Jev-communication.json`);
   if (communication) fs.writeFileSync(communicationFile, JSON.stringify(communication));
@@ -34,10 +36,11 @@ async function fixture(t, { planner, saved, legacy, initialPaused = true, reacti
   });
   const work = require('../src/work'), mineflayer = require('mineflayer');
   t.mock.method(mineflayer, 'createBot', () => bot);
-  const survival = { state: { paused: initialPaused }, step: async () => {} }, completions = [], idleCalls = [];
+  const survival = { state: { paused: initialPaused }, step: async () => {} }, completions = [], idleCalls = [], steps = [];
   t.mock.method(work, 'createSurvival', () => survival);
-  t.mock.method(work, 'runGoal', (b, task, goal, store) => new Promise((resolve, reject) => {
+  t.mock.method(work, 'runGoal', (b, task, goal, store, options) => new Promise((resolve, reject) => {
     launches.push(goal); const cancel = task.cancel.bind(task); task.cancel = () => { cancel(); resolve(); };
+    steps.push(patch => { Object.assign(goal, patch); store.save(goal); options?.onStep?.(goal); });
     completions.push(error => { if (error) reject(error); else { goal.status = 'complete'; store.save(goal); resolve(); } });
   }));
   t.mock.method(work, 'runIdle', async () => { idleCalls.push(true); });
@@ -48,13 +51,14 @@ async function fixture(t, { planner, saved, legacy, initialPaused = true, reacti
   const errors = []; t.mock.method(console, 'error', error => errors.push(error));
   const key = require.resolve('../src/session'); delete require.cache[key];
   const { createSession } = require('../src/session');
-  const session = createSession({ host, port: 1, username: 'Jev' }, {}, { stateDirectory: directory, runLedger: null, planner });
+  const session = createSession({ host, port: 1, username: 'Jev' }, {}, { stateDirectory: directory, runLedger: null, planner, companionNow });
   t.after(async () => { session.shutdown(); await session.closed; await new Promise(resolve => setImmediate(resolve)); delete require.cache[key]; fs.rmSync(directory, { recursive: true, force: true }); });
   bot.emit('spawn');
   await settle();
-  return { bot, said, launches, scans, errors, session, survival, idleCalls, joinReads, pluginWaitFlags,
+  return { bot, said, launches, scans, errors, session, survival, idleCalls, joinReads, pluginWaitFlags, directory,
     policyFile: path.join(directory, `${host}-1-Jev-chat-policy.json`), communicationFile,
     finish: error => completions.at(-1)(error),
+    step: patch => steps.at(-1)(patch),
     send: (message, sender = 'alex') => bot._client.emit('playerChat', { sender, plainMessage: message }), read: () => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : null };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 25));
@@ -365,10 +369,13 @@ test('narration off suppresses unsolicited startup and async errors but keeps di
   assert(f.said.some(line => /Parei a tarefa/.test(line))); assert(f.said.length >= before + 2);
 });
 
-test('important narration suppresses startup progress but permits localized async failures', async t => {
-  const { planner } = plannerFixture(); const f = await fixture(t, { planner, language: 'pt-BR', narration: 'important' });
+test('important narration suppresses startup progress but permits localized help after conversational quiet', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner } = plannerFixture(); const f = await fixture(t, { planner, language: 'pt-BR', narration: 'important', companionNow: () => clock });
   assert.deepEqual(f.said, []); f.send('Jev colete troncos'); await settle(); const before = f.said.length;
-  f.finish(Object.assign(Error('No route from here'), { name: 'NoRoute' })); await settle(); assert(f.said.length > before);
+  f.finish(Object.assign(Error('No route from here'), { name: 'NoRoute' })); await settle();
+  assert.equal(f.said.length, before);
+  clock += 6000; f.session.companion.tick(); await settle(); assert(f.said.length > before);
   assert(!f.said.at(-1).includes('could not'));
 });
 
@@ -404,4 +411,319 @@ test('explicit resume of older suspended work remains a direct reply with narrat
   const f = await fixture(t, { saved: suspendedBuild(), language: 'pt-BR', narration: 'off' });
   f.send('Jev resume'); await settle(); assert.equal(f.launches.length, 1);
   assert(f.said.some(line => /Voltando à sua tarefa anterior/.test(line)));
+});
+
+function contextualPlanner(replies) {
+  const calls = [];
+  const planner = createPlanner({ client: { respond: async request => {
+    calls.push({ ...request, snapshot: JSON.parse(request.input) });
+    const reply = replies[Math.min(calls.length - 1, replies.length - 1)];
+    return { text: JSON.stringify(output(reply)) };
+  } } });
+  return { planner, calls };
+}
+
+test('postponing a clarification dismisses both question routes instead of reviving it from a later option', async t => {
+  const { planner, calls } = contextualPlanner([
+    { kind: 'clarify', item: null, count: null, deliver: null, message: 'Oak or birch?', options: ['oak_log', 'birch_log'] },
+    {},
+  ]);
+  const f = await fixture(t, { planner });
+  f.send('Jev collect logs'); await settle();
+  f.send('later'); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex'), null);
+  f.send('birch_log'); await settle();
+  assert.equal(calls.length, 1);
+  assert.equal(f.launches.length, 0);
+});
+
+test('planner conversations remember both sides across requests and keep unrelated player chat private', async t => {
+  const { planner, calls } = contextualPlanner([
+    { kind: 'chat', item: null, count: null, deliver: null, message: 'Podemos usar madeira de carvalho.' },
+    { kind: 'chat', item: null, count: null, deliver: null, message: 'Sim, era madeira de carvalho.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR' });
+  f.send('Jev qual madeira devemos usar?'); await settle();
+  f.send('private conversation between other players', 'other'); await settle();
+  f.send('Jev qual foi sua sugestão?'); await settle();
+  const context = calls.at(-1).snapshot.conversation;
+  assert(context.recentMessages.some(message => message.role === 'player' && message.text.includes('qual madeira')));
+  assert(context.recentMessages.some(message => message.role === 'bot' && message.text.includes('carvalho')));
+  assert(!JSON.stringify(context).includes('private conversation'));
+  assert.equal(f.launches.length, 0);
+});
+
+test('a later question receives the failed task and actual executor error as historical evidence', async t => {
+  const { planner, calls } = contextualPlanner([
+    {}, { kind: 'chat', item: null, count: null, deliver: null, message: 'Não encontrei um caminho seguro.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR' });
+  f.send('Jev colete 16 troncos'); await settle();
+  f.step({ status: 'running', step: { action: 'mine', item: 'birch_log' } });
+  f.finish(Object.assign(new Error('No safe route to the requested tree'), { name: 'NoRoute' })); await settle();
+  f.send('Jev por que você parou?'); await settle();
+  const context = calls.at(-1).snapshot.conversation;
+  assert(context.recentTasks.some(task => task.status === 'blocked' && /safe route/.test(task.error)));
+  assert(context.recentEvents.some(event => event.action === 'mine'));
+  assert.equal(f.launches.length, 1);
+  assert.equal(f.bot._waitingForRequest, true);
+});
+
+test('conversation context survives reconnect while current empty inventory overrides pre-death possessions', async t => {
+  const { planner, calls } = contextualPlanner([
+    {}, { kind: 'chat', item: null, count: null, deliver: null, message: 'Perdi os itens quando morri.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR' });
+  f.bot.inventory.slots = [];
+  f.bot.inventory.slots[5] = { name: 'iron_helmet', count: 1 };
+  f.send('Jev colete troncos'); await settle();
+  f.bot.emit('death'); await f.session.closed; await settle();
+  const next = await fixture(t, { planner, language: 'pt-BR', stateDirectory: f.directory });
+  next.bot.inventory.items = () => [];
+  next.bot.inventory.slots = [];
+  next.send('Jev você ainda tem os troncos e o capacete?'); await settle();
+  const snapshot = calls.at(-1).snapshot;
+  assert.deepEqual(snapshot.inventory, {});
+  assert.deepEqual(snapshot.equipment, []);
+  assert(snapshot.conversation.recentEvents.some(event => event.type === 'death'));
+  assert(snapshot.conversation.recentMessages.some(message => message.role === 'player' && message.text.includes('colete troncos')));
+  assert.equal(next.launches.length, 0);
+});
+
+test('personality changes stay local, persist and reach the planner without replacing active work', async t => {
+  const { planner, calls } = contextualPlanner([
+    {}, { kind: 'chat', item: null, count: null, deliver: null, message: 'Tudo certo por aqui.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR', chatAdmins: 'Alex', personality: 'reserved', initiative: 'help' });
+  f.send('Jev colete troncos'); await settle();
+  assert.equal(calls[0].snapshot.personality, 'reserved');
+  const active = f.launches[0], epoch = f.bot._requestActivityEpoch;
+  f.send('!jev personality playful'); f.send('!jev initiative full'); await settle();
+  assert.equal(calls.length, 1); assert.equal(f.launches.length, 1);
+  assert.equal(f.bot._requestActivityEpoch, epoch);
+  assert.equal(active.status, 'pending');
+  assert.equal(JSON.parse(fs.readFileSync(f.communicationFile, 'utf8')).personality, 'playful');
+  assert.equal(JSON.parse(fs.readFileSync(f.communicationFile, 'utf8')).initiative, 'full');
+  f.send('Jev como está indo?'); await settle();
+  assert.equal(calls.at(-1).snapshot.personality, 'playful');
+  assert.equal(f.launches.length, 1);
+});
+
+test('a Portuguese ordinal answers the original clarification after reconnect without repeating the bot name', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner, calls } = contextualPlanner([
+    { kind: 'clarify', item: null, count: null, deliver: null, message: 'Você prefere carvalho ou bétula?', options: ['carvalho', 'bétula'] },
+    { item: 'birch_log', count: 8, message: 'Vou coletar oito troncos de bétula.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR', companionNow: () => clock });
+  f.send('Jev colete oito troncos para mim'); await settle();
+  assert.equal(f.launches.length, 0);
+  f.session.shutdown(); await f.session.closed; await settle();
+  clock += 1000;
+  const next = await fixture(t, { planner, language: 'pt-BR', companionNow: () => clock, stateDirectory: f.directory });
+  next.send('a segunda'); await settle();
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].snapshot.request, /colete oito troncos/);
+  assert.match(calls[1].snapshot.request, /bétula/);
+  assert.equal(next.launches.length, 1);
+  assert.equal(next.launches[0].count, 8);
+});
+
+test('repeated executor errors pause once, request useful help, and preserve reactive waiting', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z'), ticks = 0;
+  const reactive = { tick: async () => { ticks++; }, cancel: async () => {} };
+  const { planner, calls } = contextualPlanner([{}]);
+  const f = await fixture(t, { planner, language: 'pt-BR', reactive, companionNow: () => clock });
+  f.send('Jev colete dezesseis troncos'); await settle();
+  for (let failures = 1; failures <= 3; failures++) {
+    clock += 1000;
+    f.step({ status: 'running', step: { action: 'mine', item: 'birch_log' }, lastError: 'No safe route to the requested tree', failures,
+      updatedAt: new Date(clock).toISOString() });
+    await settle();
+  }
+  assert.equal(f.read().status, 'blocked');
+  assert.equal(f.bot._waitingForRequest, true);
+  assert.equal(f.survival.state.paused, true);
+  clock += 5000;
+  f.session.companion.tick(); await settle();
+  const pending = f.session.companion.dialogue.pending('Alex');
+  assert.equal(pending.kind, 'help');
+  assert.equal(pending.goalId, f.launches[0].memoryId);
+  const afterHelp = f.said.length;
+  for (let count = 0; count < 10; count++) { clock += 31000; f.session.companion.tick(); }
+  assert.equal(f.said.length, afterHelp, 'the same blockage does not produce reminders');
+  await new Promise(resolve => setTimeout(resolve, 550));
+  assert(ticks > 0);
+  assert.equal(calls.length, 1);
+  assert.equal(f.launches.length, 1);
+});
+
+test('no measurable progress pauses a task using the observed clock instead of retrying forever', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner } = contextualPlanner([{}]);
+  const f = await fixture(t, { planner, companionNow: () => clock });
+  f.send('Jev collect logs'); await settle();
+  f.step({ status: 'running', step: { action: 'mine', item: 'birch_log' } });
+  clock += 180001;
+  f.session.companion.tick(); await settle();
+  assert.equal(f.read().status, 'blocked');
+  assert.equal(f.read().helpReason, 'no_progress');
+  assert.equal(f.bot._waitingForRequest, true);
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'help');
+});
+
+test('help acknowledgment waits for assistance, another player cannot answer it, and the owner explicitly resumes', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner, calls } = contextualPlanner([{}]);
+  const f = await fixture(t, { planner, language: 'pt-BR', companionNow: () => clock });
+  f.send('Jev colete troncos'); await settle();
+  f.finish(new Error('No safe route')); await settle();
+  clock += 6000; f.session.companion.tick(); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'help');
+  f.send('pode continuar', 'other'); await settle();
+  assert.equal(f.launches.length, 1);
+  f.send('sim'); await settle();
+  assert.equal(f.launches.length, 1, 'agreeing to help is not proof the problem was fixed');
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'help');
+  f.send('pode continuar'); await settle();
+  assert.equal(f.launches.length, 2);
+  assert.equal(calls.length, 1, 'answering help uses the saved task, without another planner call');
+  assert.equal(f.bot._waitingForRequest, false);
+});
+
+test('a new task invalidates old help so a later yes cannot resume the replaced task', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner, calls } = contextualPlanner([{}, { item: 'oak_log', count: 4 }]);
+  const f = await fixture(t, { planner, companionNow: () => clock });
+  f.send('Jev collect birch logs'); await settle();
+  f.finish(new Error('No safe route')); await settle();
+  clock += 6000; f.session.companion.tick(); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'help');
+  f.send('Jev collect four oak logs instead'); await settle();
+  assert.equal(f.launches.length, 2);
+  assert.equal(f.launches.at(-1).item, 'oak_log');
+  assert.equal(f.session.companion.dialogue.pending('Alex'), null);
+  f.send('sim'); await settle();
+  assert.equal(f.launches.length, 2);
+  assert.equal(calls.length, 2);
+});
+
+test('full initiative offers an observed completed item and waits for owner consent before delivery', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner, calls } = contextualPlanner([
+    { item: 'oak_log', count: 4 }, { item: 'oak_log', count: 4, deliver: true, message: 'Vou levar os troncos até você.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR', initiative: 'full', companionNow: () => clock });
+  f.send('Jev colete quatro troncos de carvalho'); await settle();
+  f.finish(); await settle();
+  clock += 6000; f.session.companion.tick(); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'suggestion');
+  assert.equal(f.launches.length, 1);
+  assert.equal(calls.length, 1);
+  f.send('sim', 'other'); await settle();
+  assert.equal(f.launches.length, 1);
+  f.send('pode trazer'); await settle();
+  assert.equal(f.launches.length, 2);
+  assert.equal(f.launches.at(-1).deliver, true);
+  assert.equal(f.launches.at(-1).from, 'Alex');
+  assert.match(calls.at(-1).snapshot.request, /Bring me 4 oak_log/);
+});
+
+for (const narration of ['off', 'important']) test(`${narration} narration suppresses optional suggestions while important still permits help`, async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner } = contextualPlanner([{ item: 'oak_log', count: 4 }]);
+  const f = await fixture(t, { planner, narration, initiative: 'full', companionNow: () => clock });
+  f.send('Jev collect four oak logs'); await settle();
+  f.finish(); await settle();
+  const before = f.said.length;
+  clock += 6000; f.session.companion.tick(); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex'), null);
+  assert.equal(f.said.length, before);
+  f.send('Jev collect four more oak logs'); await settle();
+  f.finish(new Error('No safe route')); await settle();
+  clock += 6000; f.session.companion.tick(); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex')?.kind || null, narration === 'important' ? 'help' : null);
+});
+
+test('a new addressed conversation dismisses an old clarification and its later option does not revive it', async t => {
+  const { planner, calls } = contextualPlanner([
+    { kind: 'clarify', item: null, count: null, deliver: null, message: 'Carvalho ou bétula?', options: ['carvalho', 'bétula'] },
+    { kind: 'chat', item: null, count: null, deliver: null, message: 'Tudo bem, podemos conversar sobre outra coisa.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'pt-BR' });
+  f.send('Jev colete alguns troncos'); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'clarify');
+  f.send('Jev como está o tempo por aqui?'); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex'), null);
+  f.send('bétula'); await settle();
+  assert.equal(calls.length, 2);
+  assert.equal(f.launches.length, 0);
+});
+
+test('another player answering their own clarification cannot bare-cancel the active owner task', async t => {
+  const { planner, calls } = contextualPlanner([
+    {}, { kind: 'clarify', item: null, count: null, deliver: null, message: 'Oak or birch?', options: ['oak', 'birch'] },
+  ]);
+  const f = await fixture(t, { planner });
+  f.send('Jev collect birch logs'); await settle();
+  const active = f.launches[0];
+  f.send('Jev which wood should I use?', 'other'); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Other').kind, 'clarify');
+  f.send('cancel', 'other'); await settle();
+  assert.equal(active.status, 'pending');
+  assert.equal(f.bot._waitingForRequest, false);
+  f.send('esquece', 'other'); await settle();
+  assert.equal(active.status, 'pending');
+  assert.equal(f.session.companion.dialogue.pending('Other'), null);
+  assert.equal(f.launches.length, 1);
+  assert.equal(calls.length, 2);
+});
+
+test('lost inventory invalidates a pending delivery offer before an affirmative answer can start work', async t => {
+  let clock = Date.parse('2026-10-26T12:00:00Z');
+  const { planner, calls } = contextualPlanner([{ item: 'oak_log', count: 4 }]);
+  const f = await fixture(t, { planner, initiative: 'full', companionNow: () => clock });
+  f.send('Jev collect four oak logs'); await settle();
+  f.finish(); await settle();
+  clock += 6000; f.session.companion.tick(); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex').kind, 'suggestion');
+  f.bot.inventory.items = () => [];
+  f.send('sim'); await settle();
+  assert.equal(f.session.companion.dialogue.pending('Alex'), null);
+  assert.equal(f.launches.length, 1);
+  assert.equal(calls.length, 1);
+});
+
+test('an explicit English remember note stays local and reaches the planner notebook after reconnect', async t => {
+  const { planner, calls } = contextualPlanner([
+    { kind: 'chat', item: null, count: null, deliver: null, message: 'You told me our base is by the river.' },
+  ]);
+  const f = await fixture(t, { planner, language: 'en-US' });
+  f.send('Jev remember that our base is by the river'); await settle();
+  assert.equal(calls.length, 0);
+  f.session.shutdown(); await f.session.closed; await settle();
+  const next = await fixture(t, { planner, language: 'en-US', stateDirectory: f.directory });
+  next.send('Jev where did I say our base was?'); await settle();
+  assert.equal(calls.length, 1);
+  assert(calls[0].snapshot.memory.notes.some(note => note.note === 'our base is by the river'));
+  assert.equal(next.launches.length, 0);
+});
+
+test('clearing one player memory preserves another player notes and the active task', async t => {
+  const { planner, calls } = contextualPlanner([{}]);
+  const f = await fixture(t, { planner });
+  f.send('Jev remember that I prefer oak');
+  f.send('Jev remember that I prefer birch', 'other');
+  await settle();
+  f.send('Jev collect birch logs'); await settle();
+  const active = f.launches[0], epoch = f.bot._requestActivityEpoch;
+  f.send('!jev memory clear'); await settle();
+  assert.equal(f.bot.companionMemory.context('Alex').notes.length, 0);
+  assert.equal(f.bot.companionMemory.context('Other').notes[0].note, 'I prefer birch');
+  assert(f.session.companion.memory.context('Other').recentMessages.some(message => message.text.includes('prefer birch')));
+  assert(!f.session.companion.memory.context('Alex').recentMessages.some(message => message.role === 'player' && message.text.includes('prefer oak')));
+  assert.equal(active.status, 'pending');
+  assert.equal(f.bot._requestActivityEpoch, epoch);
+  assert.equal(f.launches.length, 1);
+  assert.equal(calls.length, 1);
 });

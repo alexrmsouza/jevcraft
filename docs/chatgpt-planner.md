@@ -145,9 +145,12 @@ immediately and are saved per server/port/bot identity in the ignored
 stay in their separate chat-policy file; an explicit `JEV_CHAT_MODE` still fixes
 that addressing mode.
 
-Only the request and a compact game snapshot go to the planner: the player and
-bot names, inventory, observed nearby block names, game mode, dimension and
-current goal summary. It does not receive credentials or the full saved state.
+The request and bounded contextual memory go to the planner: the player and
+bot names, inventory, equipment, vitals, position, observed nearby block names,
+game mode, dimension, current execution state, recent messages/actions/tasks,
+player notes and the pending question. It does not receive credentials or the
+full saved state. [Conversation and personality](companion.md) describes the
+local storage, context budgets and initiative settings.
 Responses use `store:false` and `stream:true`; only completed, locally validated
 goals reach the executor. ChatGPT plan limits are separate from Jev usage.
 
