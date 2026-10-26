@@ -31,6 +31,7 @@ const { immediateThreat } = require('./danger');
 const { createReactiveWait } = require('./reactive-wait');
 const { createChatPolicy } = require('./chat-policy');
 const { createCommunicationPolicy, announce } = require('./communication');
+const { createSessionCompanion } = require('./session-companion');
 const { localize, displayName } = require('./language');
 const { Ledger, withRun, appendSummary } = require('./ledger');
 
@@ -52,9 +53,10 @@ function unworkable(bot, spec) {
 }
 
 function createSession(config, client, { stateDirectory = path.join(__dirname, '..', '.bot-state'), recorder, planner,
-  runLedger = path.join(stateDirectory, 'run-ledger.md') } = {}) {
+  runLedger = path.join(stateDirectory, 'run-ledger.md'), companionNow = Date.now } = {}) {
   const identity = `${config.host}-${config.port}-${config.username}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   const communication = createCommunicationPolicy({ host: config.host, language: process.env.JEV_LANGUAGE, narration: process.env.JEV_NARRATION,
+    personality: process.env.JEV_PERSONALITY, initiative: process.env.JEV_INITIATIVE,
     file: path.join(stateDirectory, `${identity}-communication.json`), admins: process.env.JEV_CHAT_ADMINS });
   let ended = false, spawned = false, resolveClosed;
   const connectedAt = Date.now();
@@ -63,6 +65,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   Object.defineProperties(bot, {
     _jevLanguage: { configurable: true, get: () => communication.language },
     _jevNarration: { configurable: true, get: () => communication.narration },
+    _jevPersonality: { configurable: true, get: () => communication.personality },
+    _jevInitiative: { configurable: true, get: () => communication.initiative },
   });
   const text = (english, portuguese) => localize(bot, english, portuguese);
   const localizedDreamTitle = standing => dreamTitle(standing, bot);
@@ -238,7 +242,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   if (!survivalStore.read() && store.read()?.status === 'cancelled') survival.state.paused = true;
   const saveSurvival = () => { if (!ended) { survival.state.version = 1; survivalStore.save(survival.state); } };
   if (planner) { survival.state.paused = true; saveSurvival(); }
-  const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); world.harvest(goal); store.save(goal); } };
+  let companion;
+  const saveGoal = goal => { if (!ended) { memory.recordGoal(goal, bot); companion?.memory.task(goal.from, goal); world.harvest(goal); store.save(goal); } };
   const workStore = { save: goal => { saveGoal(goal); saveSurvival(); } };
   let active = null;
   // A goal going again after a threat escaped its loop (launch's catch).
@@ -257,6 +262,27 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   let observation;
   const reactiveWait = planner ? createReactiveWait({ bot, survival, save: saveSurvival,
     isReady: () => ready && !ended, isBusy: () => Boolean(active) || relaunching }) : null;
+  companion = createSessionCompanion({ bot,
+    file: path.join(stateDirectory, `${memoryIdentity}-conversation.json`),
+    dialogueFile: path.join(stateDirectory, `${memoryIdentity}-dialogue.json`),
+    now: companionNow,
+    settings: () => ({ language: communication.language, narration: communication.narration,
+      personality: communication.personality, initiative: communication.initiative }),
+    getGoal: () => active && !active.idle ? active.goal : store.read(),
+    getDiscoveries: () => require('./exploration').foundEntries(world.known),
+    isReady: () => ready && !ended,
+    isWorking: () => Boolean(active && !active.idle && !active.task.cancelled),
+    onBlocked: (goal, reason) => {
+      const session = active;
+      if (!session || session.idle || session.goal !== goal || session.helpPausing || session.task.cancelled) return;
+      session.helpPausing = true;
+      goal.helpReason = reason;
+      if (reason === 'no_progress') goal.lastError = 'No measurable progress on the current task';
+      // stop unwinds work before any help is requested. Reactive waiting takes
+      // over in launch's finally block; no second executor is started here.
+      stop('blocked').catch(console.error);
+    },
+  });
 
   async function stop(status = 'cancelled') {
     if (planner && status === 'cancelled') setWaitingForRequest(true);
@@ -264,7 +290,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (!active) {
       if (status === 'cancelled') {
         const saved = store.read();
-        if (saved && ['pending', 'running', 'recovering'].includes(saved.status)) { saved.status = 'cancelled'; saveGoal(saved); }
+        if (saved && ['pending', 'running', 'recovering', 'blocked'].includes(saved.status)) { saved.status = 'cancelled'; saveGoal(saved); }
       }
       await reactiveWait?.cancel();
       return;
@@ -291,9 +317,12 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const task = new Task(goal.kind, goal.request);
     const session = { task, goal };
     active = session;
+    clarifying.clear();
+    companion.started(goal);
     session.promise = runGoal(bot, task, goal, workStore, {
       decisionClient: routed, survival,
       onStep: g => {
+        if (!session.task.cancelled && companion.safe()) companion.observe(g);
         console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g);
         // Every step change, not only the one a second the supervisor sees:
         // mid-110-f's staircase and retreat traded seven times in eight
@@ -316,7 +345,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (err.name !== 'Cancelled') {
         goal.status = 'blocked'; goal.lastError = err.message; saveGoal(goal);
         observation?.sample('error', { message: err.message }, goal);
-        console.error(err); announce(bot, `${friendlyProblem(err, { bot })} ${recoveryHint(err, bot)}`, 'important');
+        console.error(err);
+        if (!planner) announce(bot, `${friendlyProblem(err, { bot })} ${recoveryHint(err, bot)}`, 'important');
       }
     }).finally(() => {
       if (active === session) {
@@ -330,6 +360,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         return;
       }
       if (!goal.dream && ['complete', 'blocked'].includes(goal.status)) ledger.close(goal.ledgerRun, goal.status);
+      if (!ended && !session.relaunch) {
+        if (goal.status === 'blocked') companion.blocked(goal);
+        else if (goal.status === 'complete') companion.completed(goal);
+      }
       // A custom dream is one request: done when it completes.
       if (goal.dream === 'custom' && goal.status === 'complete' && !ended) settleCustom(dreamStore.read(), goal);
     });
@@ -449,6 +483,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   }
 
   async function resume(revision = generation, options) {
+    const respond = message => options?.from ? companion.sayTo(options.from, message) : bot.chat(message);
     await reactiveWait?.cancel();
     if (active?.idle) await stop('interrupted');
     // The dream is what the bot does with nobody's work waiting. A player's
@@ -459,18 +494,20 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       if (waiting && !waiting.dream) await stop('replaced');
     }
     if (revision !== generation || ended) return;
-    if (active) { bot.chat(text('Already working on the saved task.', 'Já estou trabalhando na tarefa salva.')); return; }
+    if (active) { respond(text('Already working on the saved task.', 'Já estou trabalhando na tarefa salva.')); return; }
     const current = store.read(), saved = resumeSaved(current, options);
     if (!saved || saved.status === 'complete') {
       setWaitingForRequest(Boolean(planner));
       survival.state.paused = Boolean(planner); delete survival.state.idleBlocked; delete survival.state.deathBlocked; saveSurvival();
-      bot.chat(planner ? text('Waiting for your next request. I am still watching for danger.', 'Aguardando seu próximo pedido. Continuo atento a perigos.') : text("I'm back! I'll look after myself while I wait for your next task.", 'Voltei! Vou cuidar de mim enquanto aguardo sua próxima tarefa.')); return;
+      respond(planner ? text('Waiting for your next request. I am still watching for danger.', 'Aguardando seu próximo pedido. Continuo atento a perigos.') : text("I'm back! I'll look after myself while I wait for your next task.", 'Voltei! Vou cuidar de mim enquanto aguardo sua próxima tarefa.')); return;
     }
     delete saved.waitingOn;
+    saved.helpEpoch = (saved.helpEpoch || 0) + 1;
+    delete saved.helpReason;
     if (saved.kind === 'build' && !saved.design) saved.designAttempts = 0;
     if (saved !== current) {
       const message = text(`Back to your earlier task: ${saved.request}.`, `Voltando à sua tarefa anterior: ${saved.request}.`);
-      if (options?.automatic) announce(bot, message, 'important'); else bot.chat(message);
+      if (options?.automatic) announce(bot, message, 'important'); else respond(message);
     }
     launch(saved);
   }
@@ -488,6 +525,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // again by itself once that block is gone (siteChanged in work.js).
   let waitCheckedAt = 0;
   const idleTimer = setInterval(() => {
+    companion.tick();
     if (planner) {
       reactiveWait.tick().catch(error => console.error('[reactive wait]', error.name));
       return;
@@ -511,13 +549,27 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     if (!player || player.username === bot.username || typeof data.plainMessage !== 'string') return;
     const from = player.username;
     let request = data.plainMessage;
+    companion.heard();
+    const reply = message => companion.sayTo(from, message);
     const communicationCommand = communication.handleCommand(request, { from, username: bot.username, players: bot.players });
-    if (communicationCommand?.handled) { if (communicationCommand.message) bot.chat(communicationCommand.message); return; }
+    if (communicationCommand?.handled) { companion.received(from, request); if (communicationCommand.message) reply(communicationCommand.message); return; }
     const chatCommand = chatPolicy?.handleCommand(request, { from, username: bot.username, players: bot.players, language: bot._jevLanguage });
-    if (chatCommand?.handled) { if (chatCommand.message) bot.chat(chatCommand.message); return; }
+    if (chatCommand?.handled) { companion.received(from, request); if (chatCommand.message) reply(chatCommand.message); return; }
+    const memoryCommand = request.trim().match(/^!jev memory(?: (clear))?$/i);
+    if (memoryCommand) {
+      if (memoryCommand[1]) {
+        memory.forget(from, 'all'); companion.memory.forget(from); companion.dialogue.clear(from); clarifying.delete(from);
+        reply(text('I cleared your saved conversation and notes for this world.', 'Apaguei sua conversa e suas notas salvas para este mundo.'));
+      } else {
+        const context = companion.memory.context(from);
+        reply(text(`I remember ${context.recentMessages.length} recent messages, ${context.recentTasks.length} tasks, and your saved notes for this world.`,
+          `Lembro de ${context.recentMessages.length} mensagens recentes, ${context.recentTasks.length} tarefas e suas notas salvas neste mundo.`));
+      }
+      return;
+    }
     let literal;
     try { literal = requestedCommand(request, bot.username); }
-    catch (err) { console.error(err); bot.chat(text('I could not use that command. Please check what you asked me to do.', 'Não consegui usar esse comando. Confira o que você pediu.')); return; }
+    catch (err) { console.error(err); reply(text('I could not use that command. Please check what you asked me to do.', 'Não consegui usar esse comando. Confira o que você pediu.')); return; }
     let address = parseAddress(request, bot.username);
     // Acknowledgements from other bots must never start new work. New goals
     // require an explicit name; short controls remain convenient when unprefixed.
@@ -530,7 +582,25 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // the count and the recipient. The reply is read together with the
     // request it answers.
     const known = text => { const name = text.toLowerCase().replace(/\s+/g, '_'); return !!(bot.registry?.itemsByName?.[name] || bot.registry?.blocksByName?.[name] || bot.registry?.entitiesByName?.[name]); };
-    const answer = !literal && !control.test(address.text) && clarificationReply(clarifying.get(from), address, { known });
+    const dialogueReply = !literal && !control.test(address.text) && companion.reply(from, address.text, address.explicit);
+    if (address.explicit && !dialogueReply) companion.dialogue.clear(from);
+    if (dialogueReply && !['clarify', 'request'].includes(dialogueReply.action)) {
+      companion.received(from, request);
+      if (dialogueReply.action !== 'acknowledge') clarifying.delete(from);
+      if (dialogueReply.action === 'resume') {
+        if (ready) { invalidateRequests(); companion.clearQuestions(); resume(generation, { from }).catch(console.error); }
+        else reply(text('Still loading. Please ask me to resume in a moment.', 'Ainda estou carregando. Peça para retomar daqui a pouco.'));
+      } else if (dialogueReply.action === 'cancel') {
+        if (dialogueReply.question.kind === 'help') {
+          invalidateRequests(); companion.clearQuestions(); stop().catch(console.error);
+          reply(text('Okay, I stopped the task. I will still watch for danger.', 'Certo, parei a tarefa. Continuo atento a perigos.'));
+        } else reply(text('Okay, I dropped that question.', 'Certo, deixei essa pergunta de lado.'));
+      } else if (dialogueReply.action === 'defer') {
+        reply(text('Okay, we can come back to this later.', 'Certo, podemos voltar a isso depois.'));
+      } else reply(text('Thanks. Say "resume" when you are ready.', 'Obrigado. Diga "resume" quando estiver pronto.'));
+      return;
+    }
+    const answer = dialogueReply?.request || (!literal && !control.test(address.text) && clarificationReply(clarifying.get(from), address, { known }));
     // A new addressed message moves on from the question either way.
     if (answer || address.explicit) clarifying.delete(from);
     if (answer) {
@@ -541,8 +611,15 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       addressed: address.explicit, control: control.test(address.text), clarification: Boolean(answer) })
       : address.explicit || control.test(address.text);
     if (!chatAccepted) return;
+    companion.received(from, data.plainMessage);
     // Stop has a synchronous fast path, even while a network request is pending.
     const normalized = address.text;
+    const note = normalized.match(/^(?:remember(?: this| that)?|lembre(?:-se)?(?: disso| que)?|lembra(?: que)?|anote)(?:\s*:\s*|\s+)(.{1,256})$/i);
+    if (note && !literal) {
+      memory.rememberNote(from, note[1]);
+      reply(text('I will remember that for this world.', 'Vou me lembrar disso neste mundo.'));
+      return;
+    }
     const stopping = new RegExp(`^(stop|cancel|pare|parar|cancele|cancelar)${controlEnd}`, 'i').test(normalized);
     const resuming = new RegExp(`^(resume|retome|retomar|continue)${controlEnd}`, 'i').test(normalized);
     // "Stop!" between two players is not addressed to the bot. Unprefixed,
@@ -555,20 +632,22 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const named = chatNames(bot.username || config.username).some(name => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(address.text));
     if ((stopping || resuming) && !address.explicit && !named && owner !== from && company > 0) return;
     if (stopping) {
+      companion.clearQuestions(); clarifying.clear();
       invalidateRequests();
       stop().catch(console.error);
-      bot.chat(planner ? text('I stopped the task; I will still defend myself. Say "Jev resume" to continue.', 'Parei a tarefa; continuo me defendendo. Diga "Jev resume" para continuar.') : text('Stopped. I saved our progress. Say "Jev resume" to keep going.', 'Parei e salvei nosso progresso. Diga "Jev resume" para continuar.'));
+      reply(planner ? text('I stopped the task; I will still defend myself. Say "Jev resume" to continue.', 'Parei a tarefa; continuo me defendendo. Diga "Jev resume" para continuar.') : text('Stopped. I saved our progress. Say "Jev resume" to keep going.', 'Parei e salvei nosso progresso. Diga "Jev resume" para continuar.'));
       return;
     }
-    if (!ready) { bot.chat(text('Still loading the world; please repeat the request in a moment. Stop is available now.', 'Ainda estou carregando o mundo; repita o pedido daqui a pouco. Você já pode usar stop.')); return; }
+    if (!ready) { reply(text('Still loading the world; please repeat the request in a moment. Stop is available now.', 'Ainda estou carregando o mundo; repita o pedido daqui a pouco. Você já pode usar stop.')); return; }
     // A literal status request reads local state immediately, even while a
     // previous natural-language request is waiting for a model response.
     if (new RegExp(`^status${controlEnd}`, 'i').test(normalized)) {
-      bot.chat(statusMessage(bot, active, store.read())); return;
+      reply(statusMessage(bot, active, store.read())); return;
     }
     if (resuming) {
+      companion.clearQuestions(); clarifying.clear();
       invalidateRequests();
-      resume(generation).catch(console.error);
+      resume(generation, { from }).catch(console.error);
       return;
     }
     // Acknowledge instantly. Everything below can wait on the model, and a
@@ -605,7 +684,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         continueBuilds: (request, candidates) => resolveBuildContinuation(requestClient, request, candidates,
           { speaker: requestPosition.speakerPosition }),
         inventory, gameMode: bot.game.gameMode, dimension: bot.game.dimension, language: bot._jevLanguage,
-        activeGoal: active && !active.idle ? active.goal : undefined, nearbyBlocks,
+        activeGoal: active && !active.idle ? active.goal : store.read(), nearbyBlocks,
+        ...companion.context(from),
       };
       const spec = literal ? { kind: 'operator_command' } : await (planner
         ? planner.interpret(request, from, bot.username, context, { signal: requestSignal })
@@ -627,7 +707,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       }
       if (spec.kind === 'operator_command') {
         const allowed = (process.env.MC_COMMAND_USERS || '').split(',').map(name => name.trim().toLowerCase());
-        if (!allowed.includes(from.toLowerCase())) { bot.chat(text(`${from} is not enabled for Jev's operator commands`, `${from} não tem permissão para pedir comandos de operador ao Jev`)); return; }
+        if (!allowed.includes(from.toLowerCase())) { reply(text(`${from} is not enabled for Jev's operator commands`, `${from} não tem permissão para pedir comandos de operador ao Jev`)); return; }
         const resolution = literal ? { command: literal } : await classifyCommand(requestClient, bot, request, from);
         if (revision !== generation) return;
         const command = commandAccess.accept(data, { resolvedCommand: resolution.command, interpretation: { routing: spec.interpretation, command: resolution.judgments } });
@@ -643,23 +723,23 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         };
         bot.on('messagestr', collect);
         try {
-          bot.chat(text(`Running your command once: ${command.command}`, `Executando seu comando uma vez: ${command.command}`));
+          reply(text(`Running your command once: ${command.command}`, `Executando seu comando uma vez: ${command.command}`));
           command.dispatch();
           await new Promise(resolve => setTimeout(resolve, 1000));
         } finally { bot.removeListener('messagestr', collect); }
-        for (const reply of feedback) bot.chat(text(`Command response: ${reply}`, `Resposta do comando: ${reply}`));
+        for (const feedbackMessage of feedback) reply(text(`Command response: ${feedbackMessage}`, `Resposta do comando: ${feedbackMessage}`));
         return;
       }
       if (spec.kind === 'status') {
-        bot.chat(statusMessage(bot, active, store.read()));
+        reply(statusMessage(bot, active, store.read()));
         return;
       }
       if (spec.kind === 'other') {
-        bot.chat(planner ? spec.message : text('Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.', 'Peça itens ou um conjunto completo, um bioma ou criatura para encontrar, alguém para seguir ou uma estrutura para construir.'));
+        reply(planner ? spec.message : text('Ask for items or a full set, a biome or creature to find, someone to follow, or a structure to build.', 'Peça itens ou um conjunto completo, um bioma ou criatura para encontrar, alguém para seguir ou uma estrutura para construir.'));
         return;
       }
       if (spec.kind === 'memory') {
-        bot.chat(memory.handle(spec, { world: world.known, bot }));
+        reply(memory.handle(spec, { world: world.known, bot }));
         if (active?.goal.from === from) active.goal.memoryContext = memory.context(from);
         observation?.sample('memory', { operation: spec.memory.operation });
         return;
@@ -671,24 +751,24 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         if (operation === 'set_custom') {
           // The text routes as a request; a survival route may still not exist for it.
           const impossible = unworkable(bot, spec.dream.probe);
-          if (impossible) { bot.chat(text(`I can't keep that as a dream. ${friendlyProblem(impossible, { bot })}`, `Não posso guardar isso como sonho. ${friendlyProblem(impossible, { bot })}`)); return; }
+          if (impossible) { reply(text(`I can't keep that as a dream. ${friendlyProblem(impossible, { bot })}`, `Não posso guardar isso como sonho. ${friendlyProblem(impossible, { bot })}`)); return; }
         }
         if (operation === 'query') {
-          bot.chat(reportDream(standing, store.read()));
+          reply(reportDream(standing, store.read()));
         } else if (operation === 'clear') {
           if (standing.ledgerRun) ledger.close(standing.ledgerRun, 'cleared');
           saveDream({ dream: null, clearedBy: from, clearedAt: new Date().toISOString() });
           if (active && !active.idle && active.goal.dream) await stop('cancelled');
-          bot.chat(text('Okay, no dream for now. I\'ll just look after myself between requests.', 'Certo, sem sonho por enquanto. Vou apenas cuidar de mim entre os pedidos.'));
+          reply(text('Okay, no dream for now. I\'ll just look after myself between requests.', 'Certo, sem sonho por enquanto. Vou apenas cuidar de mim entre os pedidos.'));
         } else if (operation === 'pause') {
-          if (!standing.dream) bot.chat(text("I don't have a dream to set aside.", 'Não tenho um sonho para deixar de lado.'));
+          if (!standing.dream) reply(text("I don't have a dream to set aside.", 'Não tenho um sonho para deixar de lado.'));
           else {
             saveDream({ ...standing, paused: true, pausedBy: from, pausedAt: new Date().toISOString() });
             if (active && !active.idle && active.goal.dream) await stop('interrupted');
-            bot.chat(text(`Okay, I'll set my dream aside for now. Say "chase your dream" when you want me back on it.`, 'Certo, vou deixar meu sonho de lado por enquanto. Diga "chase your dream" quando quiser que eu continue.'));
+            reply(text(`Okay, I'll set my dream aside for now. Say "chase your dream" when you want me back on it.`, 'Certo, vou deixar meu sonho de lado por enquanto. Diga "chase your dream" quando quiser que eu continue.'));
           }
         } else if (operation === 'resume') {
-          if (!standing.dream) bot.chat(reportDream(null));
+          if (!standing.dream) reply(reportDream(null));
           else {
             // Chasing a satisfied dream again is a new run; picking up a paused one is not.
             // A custom dream begins afresh from a resume: its earlier finish or failures are behind it.
@@ -698,7 +778,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
             // A stop paused the survival loop with everything else; taking the
             // dream up again takes that up too, or nothing would run it.
             survival.state.paused = false; saveSurvival();
-            bot.chat(text(`Back to my dream: to ${title}.`, `Voltando ao meu sonho: ${localizedDreamTitle(standing)}.`));
+            reply(text(`Back to my dream: to ${title}.`, `Voltando ao meu sonho: ${localizedDreamTitle(standing)}.`));
             const saved = store.read();
             if (saved?.dream && (standing.dream !== 'custom' || saved.dream === 'custom') && ['interrupted', 'cancelled', 'blocked'].includes(saved.status) && !active) {
               if (standing.dream === 'custom') saved.dreamSetAt = fresh.setAt ?? standing.setAt;
@@ -709,7 +789,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           if (standing.ledgerRun && !standing.satisfiedAt) ledger.close(standing.ledgerRun, 'replaced');
           const text = spec.dream.text;
           saveDream({ dream: key, ...(key === 'custom' && { text }), setBy: from, setAt: new Date().toISOString(), ledgerRun: ledger.open({ kind: 'dream', name: dreamName(key, text) }).id });
-          bot.chat(key === 'custom' ? localize(bot, `Got it. My dream is to ${text}. I'll do it once, whenever nothing else needs me.`, `Entendido. Meu sonho é ${text}. Vou realizá-lo uma vez quando estiver livre.`)
+          reply(key === 'custom' ? localize(bot, `Got it. My dream is to ${text}. I'll do it once, whenever nothing else needs me.`, `Entendido. Meu sonho é ${text}. Vou realizá-lo uma vez quando estiver livre.`)
             : localize(bot, `Got it. My dream is to ${DREAMS[key].title}. I'll chase it whenever nothing else needs me.`, `Entendido. Meu sonho é ${localizedDreamTitle({ dream: key })}. Vou segui-lo quando estiver livre.`));
         }
         observation?.sample('dream', { operation, key, standing: dreamStore.read() });
@@ -719,11 +799,11 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         const reason = spec.clarification?.reason;
         clarifying.set(from, { request: address.text, options: spec.clarification?.options, until: Date.now() + CLARIFY_MS,
           confirm: ['uncertain_interaction', 'dream_unsure'].includes(reason), which: ['no_item', 'no_discovery_target', 'ambiguous_item', 'incomplete_bundle'].includes(reason) });
-        bot.chat(spec.message); return;
+        companion.clarify(from, spec, address.text); return;
       }
-      if (spec.kind === 'stop') { invalidateRequests(); await stop(); bot.chat(text('Stopped.', 'Parei.')); return; }
+      if (spec.kind === 'stop') { invalidateRequests(); await stop(); reply(text('Stopped.', 'Parei.')); return; }
       if (spec.kind === 'resume') {
-        await resume(revision); return;
+        await resume(revision, { from }); return;
       }
       // In Creative with the generative designer, a plain house is drawn like
       // any other building rather than taken from the built-in catalog.
@@ -732,7 +812,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       // work that can be done. "Get me bedrock" stopped a build, then was
       // parked as impossible, and the build had to be dug out with resume.
       const impossible = unworkable(bot, spec);
-      if (impossible) { bot.chat(`${friendlyProblem(impossible, { bot })}${active && !active.idle ? text(" I'll carry on with what I was doing.", ' Vou continuar o que estava fazendo.') : ''}`); return; }
+      if (impossible) { reply(`${friendlyProblem(impossible, { bot })}${active && !active.idle ? text(" I'll carry on with what I was doing.", ' Vou continuar o que estava fazendo.') : ''}`); return; }
       await stop('replaced');
       if (revision !== generation || ended) return;
       const goal = { ...spec, ledgerRun: run.id, version: 1, status: 'pending', createdAt: new Date().toISOString(),
@@ -745,7 +825,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
           finish: text(`I'll carry on with ${spec.buildContinuation.name}.`, `Vou continuar ${spec.buildContinuation.name}.`),
           repair: text(`I'll look ${spec.buildContinuation.name} over and put right what is missing.`, `Vou conferir ${spec.buildContinuation.name} e reparar o que estiver faltando.`),
         }[spec.buildContinuation.mode];
-      bot.chat(planner ? spec.message : changing ? changing :
+      reply(planner ? spec.message : changing ? changing :
         spec.kind === 'build' ? text("I'll make a plan, find a good spot, and build it for you.", 'Vou planejar, encontrar um bom lugar e construir para você.') :
         spec.kind === 'bundle' ? text(`Working on the whole list: ${bundleSummary(spec)}.`, `Vou cuidar de toda a lista: ${(spec.tasks || []).map(t => `${t.count} ${displayName(t.item, bot)}`).join(', ')}.`) :
         spec.kind === 'find' ? text(`I will look for ${spec.discoveryTarget.name.replaceAll('_', ' ')} and tell you where I find it.`, `Vou procurar ${displayName(spec.discoveryTarget.name, bot)} e avisar onde encontrar.`) :
@@ -756,7 +836,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
         spec.kind === 'win' ? text("Let's beat the dragon! I'll gather supplies and take it one step at a time.", 'Vamos derrotar o dragão! Vou reunir os recursos e avançar uma etapa por vez.') :
         text("I'll get a Nether portal working, then go through to check it.", 'Vou ativar um portal do Nether e atravessar para conferir.'));
       launch(goal); launched = true;
-    }).catch(err => { console.error(err); if (!ended && revision === generation) bot.chat(intakeProblem(err, bot)); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
+    }).catch(err => { console.error(err); if (!ended && revision === generation) reply(intakeProblem(err, bot)); }).finally(() => { if (!launched) ledger.fold(run.id); pendingRequests--; });
   });
 
   bot.once('spawn', async () => {
@@ -807,6 +887,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     }
   });
   bot.on('death', () => {
+    companion.death(); clarifying.clear();
     ready = false; invalidateRequests();
     // A dead player can rejoin before respawning. No work has started in this
     // connection, so request respawn directly without recording a second death.
@@ -836,12 +917,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // Fence late saves from this connection before a replacement reads state.
     ended = true;
     memory.flush();
+    companion.close();
     resolveClosed({ reason, spawned, uptimeMs: Date.now() - connectedAt });
   }
   bot.on('end', reason => close(reason));
   bot.on('kicked', reason => console.error('[bot] kicked:', reason));
   bot.on('error', err => console.error('[bot]', err.message));
-  return { bot, closed, shutdown() { close('shutdown'); bot.quit('Shutting down'); } };
+  return { bot, closed, companion, shutdown() { close('shutdown'); bot.quit('Shutting down'); } };
 }
 
 module.exports = { unworkable, createSession };

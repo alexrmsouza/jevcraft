@@ -129,3 +129,36 @@ test('localized notifications honor the selected language and importance filter'
   notify(bot, 'Gathering.', 'Coletando.');
   assert.equal(lines.at(-1), 'Gathering.');
 });
+
+test('personality and initiative use English commands and persist only explicitly selected fields', t => {
+  const { policy, file } = settings(t, { personality: 'companion', initiative: 'help', language: 'pt-BR' });
+  assert.equal(policy.personality, 'companion'); assert.equal(policy.initiative, 'help');
+  assert.match(policy.handleCommand('!jev personality', player).message, /companion/);
+  assert.equal(policy.handleCommand('!jev personality playful', player).changed, true);
+  assert.equal(policy.handleCommand('!jev initiative full', player).changed, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { version: 1, personality: 'playful', initiative: 'full' });
+  const restored = createCommunicationPolicy({ file, language: 'en-US', narration: 'important', personality: 'reserved', initiative: 'off' });
+  assert.equal(restored.personality, 'playful'); assert.equal(restored.initiative, 'full');
+  assert.equal(restored.language, 'en-US'); assert.equal(restored.narration, 'important');
+});
+
+test('invalid personality and initiative never write, bypass permissions or replace defaults', t => {
+  const { policy, file } = settings(t);
+  for (const command of ['!jev personality brave', '!jev initiative always', '!jev personality playful extra']) {
+    assert.equal(policy.handleCommand(command, player).changed, false);
+  }
+  const many = { ...player, players: { Alex: {}, Sam: {}, Jev: {} } };
+  assert.equal(policy.handleCommand('!jev personality playful', many).changed, false);
+  assert.equal(policy.handleCommand('!jev initiative full', many).changed, false);
+  assert.equal(policy.personality, 'companion'); assert.equal(policy.initiative, 'help');
+  assert.equal(fs.existsSync(file), false);
+  assert.throws(() => createCommunicationPolicy({ personality: 'unknown' }), /JEV_PERSONALITY/);
+  assert.throws(() => createCommunicationPolicy({ initiative: 'unknown' }), /JEV_INITIATIVE/);
+});
+
+test('corrupt saved personality falls back without losing a valid saved initiative', t => {
+  const { file } = settings(t);
+  fs.writeFileSync(file, JSON.stringify({ personality: '__proto__', initiative: 'full' }));
+  const policy = createCommunicationPolicy({ file, personality: 'reserved', initiative: 'help' });
+  assert.equal(policy.personality, 'reserved'); assert.equal(policy.initiative, 'full');
+});

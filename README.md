@@ -1,5 +1,7 @@
 # jevcraft
 
+Fork additions: [ChatGPT planner](docs/chatgpt-planner.md) and [context, personality and conversation](docs/companion.md), including persistent local memory, help requests and configurable initiative.
+
 **Can an AI that only chooses from a menu beat Minecraft?**
 
 Meet Jev. It is trying to beat Minecraft, and so far the Nether is winning.

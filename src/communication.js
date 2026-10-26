@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { normalizeLanguage, localize } = require('./language');
+const { normalizePersonality, normalizeInitiative } = require('./personality');
 const NARRATION = new Set(['off', 'important', 'full']);
 const normalize = value => String(value || '').trim().toLowerCase();
 
@@ -23,8 +24,9 @@ function announce(bot, text, level = 'progress') {
 }
 const notify = (bot, english, portuguese, level = 'progress') => announce(bot, localize(bot, english, portuguese), level);
 
-function createCommunicationPolicy({ host, language, narration, file, admins } = {}) {
-  const defaults = { language: normalizeLanguage(language), narration: normalizeNarration(narration) };
+function createCommunicationPolicy({ host, language, narration, personality, initiative, file, admins } = {}) {
+  const defaults = { language: normalizeLanguage(language), narration: normalizeNarration(narration),
+    personality: normalizePersonality(personality), initiative: normalizeInitiative(initiative) };
   const target = file ? path.resolve(file) : null;
   const saved = {};
   if (target) {
@@ -32,9 +34,14 @@ function createCommunicationPolicy({ host, language, narration, file, admins } =
       const value = JSON.parse(fs.readFileSync(target, 'utf8'));
       if (typeof value?.language === 'string') { try { saved.language = normalizeLanguage(value.language); } catch { /* Ignore unsupported saved locales. */ } }
       if (NARRATION.has(value?.narration)) saved.narration = value.narration;
+      for (const [key, normalizeValue] of [['personality', normalizePersonality], ['initiative', normalizeInitiative]]) {
+        if (typeof value?.[key] === 'string') {
+          try { saved[key] = normalizeValue(value[key]); } catch { /* Ignore unsupported saved values. */ }
+        }
+      }
     } catch { /* Missing or damaged state uses configured defaults. */ }
   }
-  const current = () => ({ language: saved.language || defaults.language, narration: saved.narration || defaults.narration });
+  const current = () => Object.fromEntries(Object.keys(defaults).map(key => [key, saved[key] || defaults[key]]));
   const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(normalize(host));
   const adminList = new Set((Array.isArray(admins) ? admins : String(admins || '').split(',')).map(normalize).filter(Boolean));
   const players = context => {
@@ -46,21 +53,28 @@ function createCommunicationPolicy({ host, language, narration, file, admins } =
   return {
     get language() { return current().language; },
     get narration() { return current().narration; },
+    get personality() { return current().personality; },
+    get initiative() { return current().initiative; },
     handleCommand(text, context = {}) {
-      if (typeof text !== 'string' || !/^!jev\s+(?:language|narration)(?:\s|$)/i.test(text.trim())) return null;
+      if (typeof text !== 'string' || !/^!jev\s+(?:language|narration|personality|initiative)(?:\s|$)/i.test(text.trim())) return null;
       const online = players(context), from = normalize(context.from);
       if (!from || from === normalize(context.username) || !online.includes(from)) return result(null);
-      const match = /^!jev\s+(language|narration)(?:\s+(\S+))?\s*$/i.exec(text.trim());
+      const match = /^!jev\s+(language|narration|personality|initiative)(?:\s+(\S+))?\s*$/i.exec(text.trim());
       if (match && !match[2]) {
         const state = current();
-        return result(say(`Language: ${state.language}. Narration: ${state.narration}.`, `Idioma: ${state.language}. Narração: ${state.narration}.`));
+        return result(say(`Language: ${state.language}. Narration: ${state.narration}. Personality: ${state.personality}. Initiative: ${state.initiative}.`,
+          `Idioma: ${state.language}. Narração: ${state.narration}. Personalidade: ${state.personality}. Iniciativa: ${state.initiative}.`));
       }
       let value;
       try {
         if (!match) throw Error('Invalid command arguments');
-        value = match[1].toLowerCase() === 'language' ? normalizeLanguage(match[2]) : normalizeNarration(match[2]);
+        const normalizers = { language: normalizeLanguage, narration: normalizeNarration, personality: normalizePersonality, initiative: normalizeInitiative };
+        value = normalizers[match[1].toLowerCase()](match[2]);
       } catch {
-        return result(say('Use !jev language en-US|pt-BR or !jev narration off|important|full.', 'Use !jev language en-US|pt-BR ou !jev narration off|important|full.'));
+        const usages = { language: '!jev language en-US|pt-BR', narration: '!jev narration off|important|full',
+          personality: '!jev personality reserved|companion|playful', initiative: '!jev initiative off|help|full' };
+        const key = text.trim().split(/\s+/)[1]?.toLowerCase();
+        return result(`Use ${usages[key] || '!jev language en-US|pt-BR'}.`);
       }
       const allowed = adminList.size ? adminList.has(from) : local && online.length === 1;
       if (!allowed) return result(say('You cannot change these settings. Configure JEV_CHAT_ADMINS.', 'Você não tem permissão para alterar estas configurações. Configure JEV_CHAT_ADMINS.'));
@@ -78,8 +92,13 @@ function createCommunicationPolicy({ host, language, narration, file, admins } =
       }
       const changed = current()[key] !== value;
       Object.assign(saved, next);
-      return result(key === 'language' ? say(`Language set to ${value}.`, `Idioma definido como ${value}.`)
-        : say(`Narration set to ${value}.`, `Narração definida como ${value}.`), changed);
+      const messages = {
+        language: [`Language set to ${value}.`, `Idioma definido como ${value}.`],
+        narration: [`Narration set to ${value}.`, `Narração definida como ${value}.`],
+        personality: [`Personality set to ${value}.`, `Personalidade definida como ${value}.`],
+        initiative: [`Initiative set to ${value}.`, `Iniciativa definida como ${value}.`],
+      };
+      return result(say(...messages[key]), changed);
     },
   };
 }
