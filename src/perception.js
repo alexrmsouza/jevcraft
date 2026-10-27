@@ -160,6 +160,26 @@ function createPerception(rawBot, { mode = 'player', coordinates = 'hud', range 
     return true;
   }
 
+  // Vision can pass through glass; a hand or an attack cannot. This ray uses
+  // collision geometry and requires the first encountered block to be the
+  // requested block, or an entirely clear segment when aiming at an entity.
+  function interactionClear(from, to, targetKey = null) {
+    const delta = to.minus(from), length = delta.norm();
+    if (!length) return targetKey === null || keyOf(from) === targetKey;
+    const iterator = new RaycastIterator(from, delta.scaled(1 / length), length);
+    let cell = iterator.block, steps = 0;
+    while (cell && steps++ < 128) {
+      const p = vector(cell), block = rawBlock(p);
+      if (!block) return false;
+      if (targetKey === keyOf(p) && targetKey === keyOf(from) && !air(block)) return true;
+      const shapes = shapesOf(block);
+      const hit = iterator.intersect(targetKey === keyOf(p) && !air(block) && !shapes.length ? cube : shapes, p);
+      if (hit && hit.pos.distanceTo(from) <= length + .001 && hit.pos.distanceTo(from) >= -.001) return keyOf(p) === targetKey;
+      cell = iterator.next();
+    }
+    return targetKey === null;
+  }
+
   function faceSamples(block, position) {
     if (air(block)) return [position.offset(.5, .5, .5)];
     const shapes = shapesOf(block);
@@ -321,12 +341,24 @@ function createPerception(rawBot, { mode = 'player', coordinates = 'hud', range 
       const closest = new Vec3(Math.max(current.position.x - width, Math.min(eye.x, current.position.x + width)),
         Math.max(current.position.y, Math.min(eye.y, current.position.y + height)),
         Math.max(current.position.z - width, Math.min(eye.z, current.position.z + width)));
-      return closest.distanceTo(eye) <= reach && (mode === 'unrestricted' || lineClear(eye, closest));
+      return closest.distanceTo(eye) <= reach && interactionClear(eye, closest);
     }
     const p = vector(position).floored();
     if (!canSeeBlock(p)) return false;
-    const closest = new Vec3(Math.max(p.x, Math.min(eye.x, p.x + 1)), Math.max(p.y, Math.min(eye.y, p.y + 1)), Math.max(p.z, Math.min(eye.z, p.z + 1)));
-    return closest.distanceTo(eye) <= reach;
+    const current = rawBlock(p);
+    if (!current || air(current)) return false;
+    for (const field of ['name', 'type', 'stateId']) {
+      if (target?.[field] !== undefined && current[field] !== undefined && target[field] !== current[field]) return false;
+    }
+    const shapes = shapesOf(current), geometry = shapes.length ? shapes : cube;
+    const points = faceSamples(current, p);
+    for (const shape of geometry.slice(0, 8)) {
+      const center = p.offset((shape[0] + shape[3]) / 2, (shape[1] + shape[4]) / 2, (shape[2] + shape[5]) / 2);
+      const closest = new Vec3(Math.max(p.x + shape[0], Math.min(eye.x, p.x + shape[3])),
+        Math.max(p.y + shape[1], Math.min(eye.y, p.y + shape[4])), Math.max(p.z + shape[2], Math.min(eye.z, p.z + shape[5])));
+      points.push(closest.plus(center.minus(closest).scaled(.0001)));
+    }
+    return points.some(point => point.distanceTo(eye) <= reach + .001 && interactionClear(eye, point, keyOf(p)));
   }
 
   function scanRay(eye, direction) {

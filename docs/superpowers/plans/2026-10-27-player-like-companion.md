@@ -22,3 +22,5 @@ Hidden ore cannot influence target selection; an unseen changed chest/block/enti
 ## Final validation
 
 Tests began only after implementation and static review were complete. The first focused run found one hearing initialization defect; after reproducing and correcting its cause, perception passed 25/25 and the combined focused suite passed 243/243. The full native Windows suite passed 4,589/4,589 (Node22.23.3, cmd.exe, concurrency8, 196,230ms), with zero failures/cancellations/skips. Portability checked 1,184 JavaScript files and 14 shell wrappers. The compatibility CLI reported the configured vanilla26.1 capability boundary without connecting to Minecraft or a model. A concrete modpack integration remains dependent on the requested pack/version/loader; none is claimed supported by this change.
+
+Final review added three reproduced regressions for physical interaction through glass and stale block targets. The corrected perception suite passed 28/28 and the combined focused suite passed 246/246. The full suite and cross-platform CI are rerun for this correction before merge; their final results are recorded in the pull request.

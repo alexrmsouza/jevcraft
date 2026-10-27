@@ -182,6 +182,36 @@ test('interaction checks use visible entity bounding boxes and reject hidden or 
   assert.equal(f.bot.perception.canInteract(target, 4.5), false);
 });
 
+test('glass permits seeing an ore face but blocks interacting through it while remaining interactable itself', t => {
+  const f = fixture(t), ore = f.put('diamond_ore', 0, 65, -3), glass = f.put('glass', 0, 65, -1);
+  assert.equal(f.bot.perception.canSeeBlock(ore.position), true);
+  assert.equal(f.bot.blockAt(ore.position).name, 'diamond_ore');
+  assert.equal(f.bot.perception.canInteract(ore, 4.5), false);
+  assert.equal(f.bot.perception.canInteract(glass, 4.5), true);
+});
+
+test('glass permits seeing an entity but blocks attacks through it, and clear-air targets remain reachable', t => {
+  const f = fixture(t), target = f.entity(2, 'zombie', new Vec3(.5, 64, -2.7));
+  f.put('glass', 0, 65, -1);
+  assert.equal(f.bot.perception.visibleEntity(target), true);
+  assert.equal(f.bot.perception.canInteract(target, 3), false);
+  f.cells.delete('0,65,-1'); f.advance(100);
+  assert.equal(f.bot.perception.visibleEntity(target), true);
+  assert.equal(f.bot.perception.canInteract(target, 3), true);
+  const ore = f.put('diamond_ore', 1, 65, -3); f.advance(100);
+  assert.equal(f.bot.perception.canInteract(ore, 4.5), true);
+});
+
+test('a changed visible block cannot be interacted with through a stale state snapshot', t => {
+  const f = fixture(t), p = new Vec3(0, 65, -3);
+  f.put('diamond_ore', p.x, p.y, p.z);
+  const remembered = f.bot.blockAt(p);
+  const replacement = f.put('chest', p.x, p.y, p.z);
+  f.raw.emit('blockUpdate', remembered, replacement); f.advance(100);
+  assert.equal(f.bot.perception.canInteract(remembered), false);
+  assert.equal(f.bot.perception.canInteract(replacement), true);
+});
+
 test('gameplay entity events are filtered and translated while raw transport listeners keep their own data', t => {
   const f = fixture(t), enemy = f.entity(2, 'zombie', new Vec3(.5, 64, -3)), seen = [], rawSeen = [];
   f.raw.on('entityMoved', value => rawSeen.push(value));
