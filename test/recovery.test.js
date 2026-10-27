@@ -216,7 +216,7 @@ test('stop received while reconnecting cancels saved work before the world is re
   let session;
   try {
     mineflayer.createBot = () => bot;
-    session = createSession(config, {}, { stateDirectory: directory });
+    session = createSession(config, {}, { stateDirectory: directory, playerEnvironment: { JEV_PERCEPTION: 'unrestricted', JEV_ACTIONS: 'unrestricted', JEV_COOPERATION: 'off' } });
     bot._client.emit('playerChat', { sender: 'player-id', plainMessage: 'Jev stop' });
     const saved = JSON.parse(fs.readFileSync(path.join(directory, 'test-1-Jev.json')));
     assert.equal(saved.status, 'cancelled'); assert.equal(saved.createdAt, 'original');
@@ -244,7 +244,7 @@ test('a bare "stop" between other players is not for Jev; from the one who gave 
   let session;
   try {
     mineflayer.createBot = () => bot;
-    session = createSession(config, {}, { stateDirectory: directory });
+    session = createSession(config, {}, { stateDirectory: directory, playerEnvironment: { JEV_PERCEPTION: 'unrestricted', JEV_ACTIONS: 'unrestricted', JEV_COOPERATION: 'off' } });
     bot._client.emit('playerChat', { sender: 'other', plainMessage: 'stop!' });
     assert.equal(JSON.parse(fs.readFileSync(file)).status, 'running', 'someone else\'s "stop!" is their conversation');
     bot._client.emit('playerChat', { sender: 'other', plainMessage: 'Jev stop' });
@@ -287,7 +287,7 @@ test('an operator command runs as an aside, leaving Jev working rather than paus
   try {
     process.env.MC_COMMAND_USERS = 'Caller';
     mineflayer.createBot = () => bot;
-    session = createSession({ host: 'test', port: 1, username: 'Jev' }, {}, { stateDirectory: directory });
+    session = createSession({ host: 'test', port: 1, username: 'Jev' }, {}, { stateDirectory: directory, playerEnvironment: { JEV_PERCEPTION: 'unrestricted', JEV_ACTIONS: 'unrestricted', JEV_COOPERATION: 'off' } });
     bot.emit('spawn');
     await new Promise(resolve => setTimeout(resolve, 50));
     bot._client.emit('playerChat', { sender: 'player-id', plainMessage: 'Jev /gamemode creative' });

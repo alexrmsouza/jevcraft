@@ -1,6 +1,6 @@
 # jevcraft
 
-Fork additions: [ChatGPT planner](docs/chatgpt-planner.md) and [context, personality and conversation](docs/companion.md), including persistent local memory, help requests and configurable initiative.
+Fork additions: [ChatGPT planner](docs/chatgpt-planner.md), [context, personality and conversation](docs/companion.md), and [player-like perception and cooperation](docs/player-mode.md).
 
 **Can an AI that only chooses from a menu beat Minecraft?**
 

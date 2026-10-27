@@ -8,6 +8,23 @@ const path = require('node:path');
 const { Vec3 } = require('vec3');
 const { createSessionCompanion } = require('../src/session-companion');
 
+test('chat observation binds after asynchronous plugin injection without double recording later wrappers', () => {
+  const bot = new EventEmitter(), lines = [];
+  bot.players = {}; bot.inventory = { items: () => [] };
+  const companion = createSessionCompanion({ bot, settings: () => ({ language: 'en-US' }),
+    getGoal: () => null, isReady: () => false, onBlocked() {} });
+  bot.chat = message => lines.push(message);
+  bot.emit('inject_allowed');
+  companion.received('Alex', 'Hello'); companion.sayTo('Alex', 'Hi');
+  const previous = bot.chat;
+  bot.chat = message => previous(message);
+  bot.emit('spawn');
+  companion.sayTo('Alex', 'Still here');
+  assert.deepEqual(lines, ['Hi', 'Still here']);
+  assert.deepEqual(companion.context('Alex').conversation.recentMessages.filter(message => message.role === 'bot').map(message => message.text), ['Hi', 'Still here']);
+  companion.close();
+});
+
 function fixture(t, options = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-companion-'));
   const state = { now: Date.parse('2026-10-26T12:00:00.000Z'), ready: true, working: false,

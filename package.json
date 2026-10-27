@@ -25,6 +25,7 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
+    "compatibility": "node scripts/compatibility.js",
     "start": "node index.js",
     "chatgpt:login": "node scripts/chatgpt.js login",
     "chatgpt:status": "node scripts/chatgpt.js status",
@@ -52,6 +53,7 @@
     "minecraft-data": "^3.0.0",
     "mineflayer": "^4.39.0",
     "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-world": "^3.7.0",
     "vec3": "^0.1.10"
   }
 }

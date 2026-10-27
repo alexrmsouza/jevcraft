@@ -1,6 +1,6 @@
 # ChatGPT planner
 
-The optional planner turns a chat request into one checked item goal. Jev still
+The optional planner turns a chat request into a checked supported goal. Jev still
 chooses how to gather, craft, move and survive. It still needs its TypeSafe or
 OpenRouter credentials.
 
@@ -54,8 +54,10 @@ reactive defense can use Jev/TypeSafe. The OpenAI planner handles player
 requests only. Chat, clarification and status do not start an autonomous task.
 
 Try `Jev colete 16 troncos de carvalho` or `Jev faça 8 gravetos para mim`.
-This first version supports one obtain/craft goal at a time, conversation and
-clarification. It asks for clarification about unsupported or ambiguous work.
+Supported goals include obtaining/crafting items or bounded lists, following or
+coming to a player, finding targets, visiting remembered places, building and
+bounded exploration. See [player-like gameplay](player-mode.md) for perception,
+consent and compatibility limits. Unsupported or ambiguous work is clarified.
 Literal operator commands retain the existing authorization checks.
 
 `Jev stop`, `Jev resume` and `Jev status` use local controls. A stop cancels

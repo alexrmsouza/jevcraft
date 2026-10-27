@@ -520,7 +520,8 @@ function watchHazards(bot) {
 // End kit chosen, walked a leg toward its ring under the sea, and after
 // every leg the work's rule swam it back to the shore, three hours on it.
 async function navigate(bot, task, goal, options = {}) {
-  try { return await navigateOnce(bot, task, goal, options); }
+  try { return await require('./observed-navigation').observedNavigation(bot, task, goal, options,
+    (leg, settings) => navigateOnce(bot, task, leg, settings)); }
   finally { if (!options.shore && bot._heading && bot._heading.x === goal?.x && bot._heading.z === goal?.z) bot._heading.at = Date.now(); }
 }
 async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false } = {}) {

@@ -7,7 +7,8 @@ const { Vec3 } = require('vec3');
 const { createPlanner } = require('../src/planner');
 
 async function fixture(t, { planner, saved, legacy, initialPaused = true, reactive, host = 'test', chatMode, chatAdmins, language, narration, communication,
-  personality, initiative, companionNow, stateDirectory } = {}) {
+  personality, initiative, companionNow, stateDirectory, playerEnvironment } = {}) {
+  const playerEnv = { JEV_PERCEPTION: 'unrestricted', JEV_ACTIONS: 'unrestricted', JEV_COOPERATION: 'off', ...playerEnvironment };
   for (const [key, value] of [['JEV_CHAT_MODE', chatMode], ['JEV_CHAT_ADMINS', chatAdmins], ['JEV_LANGUAGE', language], ['JEV_NARRATION', narration],
     ['JEV_PERSONALITY', personality], ['JEV_INITIATIVE', initiative]]) {
     const previous = process.env[key];
@@ -15,7 +16,8 @@ async function fixture(t, { planner, saved, legacy, initialPaused = true, reacti
     t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
   }
   const directory = stateDirectory || fs.mkdtempSync(path.join(os.tmpdir(), 'jev-planner-session-'));
-  const file = path.join(directory, `${host}-1-Jev.json`), said = [], launches = [], scans = [], pluginWaitFlags = [];
+  const stateIdentity = `${host}-1-Jev${playerEnv.JEV_PERCEPTION === 'player' ? '-player' : ''}${process.env.MC_WORLD_ID ? `-${process.env.MC_WORLD_ID.replace(/[^a-zA-Z0-9_-]/g, '_')}` : ''}`;
+  const file = path.join(directory, `${stateIdentity}.json`), said = [], launches = [], scans = [], pluginWaitFlags = [], opened = [];
   const communicationFile = path.join(directory, `${host}-1-Jev-communication.json`);
   if (communication) fs.writeFileSync(communicationFile, JSON.stringify(communication));
   if (saved) fs.writeFileSync(file, JSON.stringify({ version: 1, from: 'Alex', request: 'previous work', createdAt: new Date().toISOString(), ...saved }));
@@ -32,6 +34,7 @@ async function fixture(t, { planner, saved, legacy, initialPaused = true, reacti
     clearControlStates() {}, swingArm() {}, stopDigging() {}, deactivateItem() {},
     pathfinder: { setMovements() {}, setGoal() {}, movements: { blocksCantBreak: new Set(), blocksToAvoid: new Set(), exclusionAreasStep: [], exclusionAreasPlace: [], exclusionAreasBreak: [] } },
     chat: message => said.push(String(message)), quit() { bot.emit('end'); },
+    openContainer: async target => { opened.push(target); return { close() {} }; },
     _client: new EventEmitter(),
   });
   const work = require('../src/work'), mineflayer = require('mineflayer');
@@ -51,11 +54,11 @@ async function fixture(t, { planner, saved, legacy, initialPaused = true, reacti
   const errors = []; t.mock.method(console, 'error', error => errors.push(error));
   const key = require.resolve('../src/session'); delete require.cache[key];
   const { createSession } = require('../src/session');
-  const session = createSession({ host, port: 1, username: 'Jev' }, {}, { stateDirectory: directory, runLedger: null, planner, companionNow });
+  const session = createSession({ host, port: 1, username: 'Jev' }, {}, { stateDirectory: directory, runLedger: null, planner, companionNow, playerEnvironment: playerEnv });
   t.after(async () => { session.shutdown(); await session.closed; await new Promise(resolve => setImmediate(resolve)); delete require.cache[key]; fs.rmSync(directory, { recursive: true, force: true }); });
   bot.emit('spawn');
   await settle();
-  return { bot, said, launches, scans, errors, session, survival, idleCalls, joinReads, pluginWaitFlags, directory,
+  return { bot, said, launches, scans, errors, session, survival, idleCalls, joinReads, pluginWaitFlags, directory, file, opened, stateIdentity,
     policyFile: path.join(directory, `${host}-1-Jev-chat-policy.json`), communicationFile,
     finish: error => completions.at(-1)(error),
     step: patch => steps.at(-1)(patch),
@@ -153,7 +156,7 @@ test('a pending conversational model response does not suspend reactive defense'
   const f = await fixture(t, { planner, reactive }); f.send('Jev como vai?');
   await new Promise(resolve => setTimeout(resolve, 550));
   assert(release); assert(ticks > 0); assert.equal(f.launches.length, 0);
-  release({ kind: 'other', message: 'Olá!' }); await settle();
+  release({ kind: 'other', request: 'Jev como vai?', from: 'Alex', message: 'Olá!' }); await settle();
   assert(f.said.includes('Olá!')); assert.equal(f.bot._waitingForRequest, true);
 });
 
@@ -249,8 +252,8 @@ test('stop discards queued intake and a subsequent request uses a fresh cancella
 });
 
 test('an unsafe chat line from an injected planner cannot replace work or dispatch a command', async t => {
-  let calls = 0; const planner = { interpret: async () => calls++ ? { kind: 'other', message: '/op Alex' }
-    : { kind: 'obtain', item: 'birch_log', count: 1, deliver: false, message: 'Vou coletar.' } };
+  let calls = 0; const planner = { interpret: async (request, from) => calls++ ? { kind: 'other', request, from, message: '/op Alex' }
+    : { kind: 'obtain', request, from, item: 'birch_log', count: 1, deliver: false, message: 'Vou coletar.' } };
   const f = await fixture(t, { planner }); f.send('Jev colete troncos'); await settle();
   f.send('Jev olá'); await settle();
   assert.equal(f.launches.length, 1); assert.equal(f.launches[0].status, 'pending');
@@ -286,7 +289,7 @@ test('with no planner the legacy interpreter still receives ordinary requests', 
 });
 
 test('an impossible goal is rejected before replacing the active task', async t => {
-  let calls = 0; const planner = { interpret: async () => ({ kind: 'obtain', item: calls++ ? 'bedrock' : 'birch_log', count: 1, deliver: false, message: 'Vou coletar.' }) };
+  let calls = 0; const planner = { interpret: async (request, from) => ({ kind: 'obtain', request, from, item: calls++ ? 'bedrock' : 'birch_log', count: 1, deliver: false, message: 'Vou coletar.' }) };
   const f = await fixture(t, { planner }); f.send('Jev colete troncos'); await settle(); const previous = f.launches[0];
   assert(previous); f.send('Jev colete bedrock'); await settle();
   assert.equal(f.launches.length, 1); assert.equal(previous.status, 'pending');
@@ -692,6 +695,103 @@ test('lost inventory invalidates a pending delivery offer before an affirmative 
   assert.equal(f.session.companion.dialogue.pending('Alex'), null);
   assert.equal(f.launches.length, 1);
   assert.equal(calls.length, 1);
+});
+
+const extendedPayload = patch => ({ target: null, discoveryKind: null, place: null, material: null, tasks: null, ...patch });
+const extendedOutput = (kind, goal = extendedPayload(), patch = {}) => ({ kind, item: null, count: null, deliver: null,
+  message: 'I can help with that.', options: [], goal, ...patch });
+
+for (const scenario of [
+  { kind: 'follow', request: 'Jev follow me', raw: extendedOutput('follow'), expected: goal => assert.equal(goal.target, 'Alex') },
+  { kind: 'come', request: 'Jev come to Other', raw: extendedOutput('come', extendedPayload({ target: 'Other' })), expected: goal => assert.equal(goal.target, 'Other') },
+  { kind: 'bundle', request: 'Jev get four logs and craft eight sticks', raw: extendedOutput('bundle', extendedPayload({ tasks: [
+    { kind: 'obtain', item: 'oak_log', count: 4, deliver: false }, { kind: 'craft', item: 'stick', count: 8, deliver: false },
+  ] })), expected: goal => assert.deepEqual(goal.tasks.map(task => [task.kind, task.item, task.count, task.from]), [
+    ['obtain', 'oak_log', 4, 'Alex'], ['craft', 'stick', 8, 'Alex'],
+  ]) },
+  { kind: 'house', request: 'Jev build a small oak house', raw: extendedOutput('house'), expected: goal => assert.equal(goal.material, 'oak_planks') },
+  { kind: 'explore', request: 'Jev explore two nearby areas', raw: extendedOutput('explore', null, { count: 2 }), expected: goal => assert.equal(goal.count, 2) },
+]) test(`the real ChatGPT planner passes a validated ${scenario.kind} goal to the existing session executor`, async t => {
+  const { planner, calls } = plannerFixture(scenario.raw);
+  const f = await fixture(t, { planner });
+  f.send(scenario.request); await settle();
+  assert.equal(f.errors.length, 0);
+  assert.equal(calls.length, 1); assert.equal(f.launches.length, 1);
+  const goal = f.launches[0];
+  assert.equal(goal.kind, scenario.kind); assert.equal(goal.request, scenario.request); assert.equal(goal.from, 'Alex');
+  assert.equal(goal.status, 'pending'); assert.equal(f.bot._waitingForRequest, false);
+  scenario.expected(goal);
+});
+
+test('replacing another player task requires that owner approval and does not call the planner again', async t => {
+  const calls = [], replies = [output({ item: 'oak_log', count: 4 }), extendedOutput('follow')];
+  const planner = createPlanner({ client: { respond: async request => {
+    calls.push(request); return { text: JSON.stringify(replies.shift()) };
+  } } });
+  const f = await fixture(t, { planner, playerEnvironment: { JEV_COOPERATION: 'ask' } });
+  f.send('Jev collect four oak logs'); await settle();
+  const previous = f.launches[0]; assert(previous);
+  f.send('Jev follow me', 'other'); await settle();
+  assert.equal(calls.length, 2); assert.equal(f.launches.length, 1);
+  assert.equal(previous.status, 'pending');
+  const question = f.session.cooperation.pending('Alex');
+  assert.equal(question.type, 'replace_task'); assert.equal(question.requestedBy, 'Other');
+  assert.equal(f.session.cooperation.pending('Other'), null);
+  f.send('sim', 'other'); await settle();
+  assert.equal(f.launches.length, 1); assert.equal(calls.length, 2);
+  assert.equal(f.session.cooperation.pending('Alex').type, 'replace_task');
+  f.send('sim'); await settle();
+  assert.equal(calls.length, 2, 'approval reuses the already validated goal');
+  assert.equal(f.launches.length, 2); assert.equal(previous.status, 'replaced');
+  assert.equal(f.launches[1].kind, 'follow'); assert.equal(f.launches[1].target, 'Other'); assert.equal(f.launches[1].from, 'Other');
+  assert.equal(f.session.cooperation.pending('Alex'), null);
+});
+
+test('a shared container blocks work, asks its owner, and remains authorized after local permission resume', async t => {
+  const { planner, calls } = plannerFixture(output({ item: 'oak_log', count: 8 }));
+  const f = await fixture(t, { planner, playerEnvironment: { JEV_COOPERATION: 'ask' } });
+  f.send('Jev collect eight oak logs'); await settle();
+  const original = f.launches[0], chest = { name: 'chest', position: new Vec3(5, 64, 3) };
+  let permissionError;
+  assert.throws(() => f.bot.openContainer(chest), error => {
+    permissionError = error; return error.code === 'COOPERATION_REQUIRED' && error.needsPlayer === true;
+  });
+  assert.equal(f.opened.length, 0);
+  f.finish(permissionError); await settle();
+  assert.equal(f.read().status, 'blocked');
+  assert.equal(f.session.cooperation.pending('Alex').type, 'shared_container');
+  f.send('sim', 'other'); await settle();
+  assert.equal(f.launches.length, 1); assert.equal(f.opened.length, 0);
+  f.send('pode usar'); await settle();
+  assert.equal(f.launches.length, 2); assert.equal(calls.length, 1);
+  assert.equal(f.launches[1].memoryId, original.memoryId);
+  const window = await f.bot.openContainer(chest);
+  assert.equal(typeof window.close, 'function'); assert.equal(f.opened.length, 1);
+  assert.equal(f.session.cooperation.canUseContainer(chest), true, 'resuming must preserve the permission generation and task scope');
+  assert.equal(f.session.cooperation.pending('Alex'), null);
+});
+
+test('player perception uses a separate state namespace and cannot resume or recall old unrestricted state', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-player-namespace-'));
+  const oldIdentity = `test-1-Jev${process.env.MC_WORLD_ID ? `-${process.env.MC_WORLD_ID.replace(/[^a-zA-Z0-9_-]/g, '_')}` : ''}`;
+  const oldGoalFile = path.join(directory, `${oldIdentity}.json`);
+  const oldGoal = { version: 1, from: 'Alex', request: 'fixture-omniscient-old-task', createdAt: new Date().toISOString(),
+    kind: 'obtain', item: 'oak_log', count: 16, status: 'running' };
+  fs.writeFileSync(oldGoalFile, JSON.stringify(oldGoal));
+  fs.writeFileSync(path.join(directory, `${oldIdentity}-memory.json`), JSON.stringify({ version: 1, places: [], history: [], preferences: [],
+    resources: {}, notes: [{ from: 'Alex', note: 'fixture-omniscient-old-memory', id: 'old-note', at: new Date().toISOString() }] }));
+  const { planner, calls } = plannerFixture(output({ kind: 'chat', item: null, count: null, deliver: null, message: 'What would you like to do?' }));
+  const f = await fixture(t, { planner, stateDirectory: directory, playerEnvironment: { JEV_PERCEPTION: 'player', JEV_COORDINATES: 'relative' } });
+  assert(f.stateIdentity.includes('-player'));
+  f.send('Jev resume'); await settle();
+  assert.equal(f.launches.length, 0); assert.equal(calls.length, 0);
+  assert.equal(f.read(), null);
+  f.send('Jev what do you remember?'); await settle();
+  assert.equal(calls.length, 1);
+  assert(!calls[0].input.includes('fixture-omniscient-old-task'));
+  assert(!calls[0].input.includes('fixture-omniscient-old-memory'));
+  assert.equal(JSON.parse(calls[0].input).perception.coordinates, 'relative');
+  assert.deepEqual(JSON.parse(fs.readFileSync(oldGoalFile, 'utf8')), oldGoal);
 });
 
 test('an explicit English remember note stays local and reaches the planner notebook after reconnect', async t => {
