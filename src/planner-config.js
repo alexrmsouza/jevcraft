@@ -1,6 +1,7 @@
 'use strict';
 
 async function configuredPlanner({ env = process.env, signal, auth, createClient } = {}) {
+  require('./content-compatibility').assertContentCompatibility({ env });
   require('./communication').createCommunicationPolicy({ host: env.MC_HOST || 'localhost', language: env.JEV_LANGUAGE, narration: env.JEV_NARRATION,
     personality: env.JEV_PERSONALITY, initiative: env.JEV_INITIATIVE });
   const provider = env.JEV_PLANNER || 'jev';

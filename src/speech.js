@@ -293,6 +293,7 @@ function completion(goal, language) {
     return say(`Found ${name(goal.discoveryTarget.name)}! It's at ${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)}.`, `Encontrei ${name(goal.discoveryTarget.name, language)}! Está em ${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)}.`);
   }
   if (goal.kind === 'come') return say(`I'm here with ${goal.target || goal.from}!`, `Cheguei até ${goal.target || goal.from}!`);
+  if (goal.kind === 'explore') return say(`I explored ${goal.playerExploration?.visited?.length || 0} new areas and saved what I observed.`, `Explorei ${goal.playerExploration?.visited?.length || 0} novas áreas e salvei o que observei.`);
   if (goal.kind === 'visit') return say(`I'm at ${goal.destination.label}!`, `Cheguei a ${goal.destination.label}!`);
   if (goal.kind === 'house' || goal.kind === 'build') {
     const changed = goal.buildContinuation?.mode === 'edit' && goal.buildContinuation.name;

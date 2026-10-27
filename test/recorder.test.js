@@ -118,7 +118,8 @@ test('the session attaches the flight recorder to its bot and detaches it when t
   let session;
   try {
     mineflayer.createBot = () => b;
-    session = createSession({ host: 'test', port: 1, username: 'Jev' }, {}, { stateDirectory: directory, recorder });
+    session = createSession({ host: 'test', port: 1, username: 'Jev' }, {}, { stateDirectory: directory, recorder,
+      playerEnvironment: { JEV_PERCEPTION: 'unrestricted', JEV_ACTIONS: 'unrestricted', JEV_COOPERATION: 'off' } });
     assert.equal(attached.server, 'test:1'); assert.equal(typeof attached.getGoal, 'function');
     session.shutdown(); assert.equal(detached, true);
   } finally { session?.shutdown(); mineflayer.createBot = original; }

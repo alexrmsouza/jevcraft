@@ -5,6 +5,7 @@ const { createDialogue, goalIdentity } = require('./dialogue');
 const { localize, displayName } = require('./language');
 const { friendlyProblem } = require('./speech');
 const { immediateThreat } = require('./danger');
+const { playerMessage } = require('./player-config');
 
 const samePlayer = (a, b) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 const PLACES_PT = { village: 'uma vila', mineshaft: 'uma mina abandonada', dungeon: 'uma masmorra', igloo: 'um iglu',
@@ -31,17 +32,26 @@ function createSessionCompanion({ bot, file, dialogueFile, settings, getGoal, ge
     try { return !immediateThreat(bot); } catch { return false; }
   };
 
-  const originalChat = bot.chat.bind(bot);
-  const wrappedChat = message => {
-    const result = originalChat(message);
-    const from = recipient || getGoal()?.from || lastPlayer;
-    // Operator/server commands are never conversation to replay to a model.
-    if (!closed && from && typeof message === 'string' && !message.trimStart().startsWith('/')) memory.message(from, 'bot', message);
-    return result;
-  };
-  bot.chat = wrappedChat;
+  let chatBinding = null;
+  function bindChat() {
+    if (closed || typeof bot.chat !== 'function' || bot.chat === chatBinding?.wrapper) return;
+    const source = bot.chat, original = source.bind(bot), binding = {};
+    binding.source = source;
+    binding.wrapper = message => {
+      if (closed || chatBinding !== binding) return original(message);
+      const spoken = playerMessage(message, settings()), dropped = bot._quietRepeats?.dropped || 0;
+      const result = original(spoken);
+      const from = recipient || getGoal()?.from || lastPlayer;
+      if (from && typeof spoken === 'string' && !spoken.trimStart().startsWith('/') && (bot._quietRepeats?.dropped || 0) === dropped) memory.message(from, 'bot', spoken);
+      return result;
+    };
+    chatBinding = binding; bot.chat = binding.wrapper;
+  }
+  bindChat();
+  bot.on('inject_allowed', bindChat); bot.on('spawn', bindChat);
 
   function sayTo(from, message) {
+    if (typeof bot.chat !== 'function') return false;
     const previous = recipient, dropped = bot._quietRepeats?.dropped || 0;
     recipient = from;
     try { bot.chat(message); return (bot._quietRepeats?.dropped || 0) === dropped; }
@@ -207,7 +217,8 @@ function createSessionCompanion({ bot, file, dialogueFile, settings, getGoal, ge
     close() {
       closed = true; memory.flush(); dialogue.flush();
       for (const [event, callback] of listeners) bot.removeListener(event, callback);
-      if (bot.chat === wrappedChat) bot.chat = originalChat;
+      bot.removeListener('inject_allowed', bindChat); bot.removeListener('spawn', bindChat);
+      if (chatBinding && bot.chat === chatBinding.wrapper) bot.chat = chatBinding.source;
     },
   };
 }

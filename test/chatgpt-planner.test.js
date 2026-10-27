@@ -20,7 +20,7 @@ test('a Portuguese request becomes one existing obtain goal with exact registry 
   assert.equal(spec.message, 'Vou coletar 16 troncos de bétula.');
   assert.equal(spec.model, 'fixture-model'); assert.deepEqual(spec.usage, { input_tokens: 20, output_tokens: 10 });
   assert.equal(calls.length, 1); assert.equal(calls[0].schema.additionalProperties, false);
-  assert.deepEqual(calls[0].schema.required.slice().sort(), Object.keys(answer()).sort());
+  assert.deepEqual(calls[0].schema.required.slice().sort(), [...Object.keys(answer()), 'goal'].sort());
   assert.match(calls[0].instructions, /Portuguese/); assert.match(calls[0].instructions, /single/);
   const snapshot = JSON.parse(calls[0].input);
   assert.equal(snapshot.request, 'colete 16 troncos'); assert.deepEqual(snapshot.nearbyBlocks, ['birch_log']);

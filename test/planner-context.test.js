@@ -12,7 +12,7 @@ function capture(value = { kind: 'chat', item: null, count: null, deliver: null,
 test('recent conversation, execution failures and known places reach the planner beside current observations', async () => {
   const { planner, calls } = capture();
   await planner.interpret('Jev why did you return?', 'Alex', 'Jev', {
-    registry, inventory: { iron_ingot: 0 }, vitals: { health: 7, food: 10, oxygen: 300 },
+    registry, perception: { coordinates: 'hud' }, inventory: { iron_ingot: 0 }, vitals: { health: 7, food: 10, oxygen: 300 },
     equipment: ['iron_pickaxe'], botPosition: { x: 12.25, y: 64, z: -4 },
     activeGoal: { memoryId: 'task-1', request: 'Get iron', kind: 'obtain', item: 'iron_ingot', count: 8,
       status: 'blocked', step: { action: 'mine', block: 'iron_ore' }, lastError: 'No safe route', apiKey: 'fixture-secret' },
@@ -69,7 +69,7 @@ test('personality is explicit context and style instructions without loosening t
     const spec = await planner.interpret('Jev hello', 'Alex', 'Jev', { registry, personality });
     assert.equal(JSON.parse(calls[0].input).personality, personality);
     assert.equal(spec.kind, 'other'); assert(!Object.hasOwn(spec, 'item'));
-    assert.deepEqual(calls[0].schema.properties.kind.enum, ['obtain', 'craft', 'chat', 'clarify']);
+    assert.deepEqual(calls[0].schema.properties.kind.enum, ['obtain', 'craft', 'chat', 'clarify', 'come', 'follow', 'find', 'visit', 'house', 'build', 'bundle', 'explore']);
     assert.match(calls[0].instructions, /Personality affects expression only/);
   }
 });

@@ -4901,6 +4901,14 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
 }
 
 async function movementStep(bot, task, goal, save) {
+  if (bot.perception?.mode === 'player' && bot.cooperation) {
+    const contact = bot.cooperation.player(goal.target || goal.from);
+    if (contact.pause) {
+      const error = new Blocked(`Cannot see ${goal.target || goal.from}. Come within view so I can follow without guessing your position.`);
+      error.needsPlayer = true;
+      throw error;
+    }
+  }
   let target = bot.players[goal.target || goal.from]?.entity;
   if (!target && goal.requesterPosition) {
     const p = goal.requesterPosition;
@@ -9519,6 +9527,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         { prepare: () => prepareBundleStep(bot, task, goal, save, decisionClient, () => onStep(goal)) });
       if (goal.kind === 'find') complete = await discoverStep(bot, task, goal, save, { navigate, explore,
         boatTravel: target => boatTravelStep(bot, task, goal, save, target, { acquireStep }) });
+      if (goal.kind === 'explore') complete = await require('./player-exploration').explorationRequestStep(bot, task, goal, save, { navigate, noticeVillage });
       if (['come', 'follow'].includes(goal.kind)) complete = await movementStep(bot, task, goal, save);
       if (goal.kind === 'visit') complete = await visitPlace(bot, task, goal, save, { navigate,
         boatTravel: target => boatTravelStep(bot, task, goal, save, target, { acquireStep }) });
